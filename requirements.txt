@@ -1,0 +1,33 @@
+# Core web & environment
+fastapi
+uvicorn
+python-dotenv
+requests
+beautifulsoup4
+lxml
+fake-useragent
+playwright
+
+# Data processing & analysis
+pandas
+numpy
+openpyxl
+pdfplumber
+nltk
+scikit-learn
+xgboost
+lightgbm
+geopandas
+shapely
+networkx
+
+# Visualization & slides
+matplotlib
+seaborn
+plotly
+altair
+python-pptx
+pillow
+
+# AI / Gemini
+google-generativeai
