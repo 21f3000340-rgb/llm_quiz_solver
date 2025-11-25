@@ -16,8 +16,7 @@ WORKDIR /app
 # ==============================
 RUN apt-get update && apt-get install -y \
     wget curl git chromium \
-    libgdal-dev g++ gcc \
-    libgeos-dev libproj-dev libspatialindex-dev \
+    g++ gcc \
     libffi-dev libssl-dev \
     libjpeg-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -41,4 +40,3 @@ RUN python -m playwright install chromium
 # ==============================
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
-
