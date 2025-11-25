@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os, re, json, logging
 from solver import solve_quiz_task
-
 # ----------------------------------------------------
 # ENVIRONMENT & SETUP
 # ----------------------------------------------------
@@ -13,20 +12,17 @@ load_dotenv()
 SECRET = os.getenv("USER_SECRET")
 EMAIL = os.getenv("USER_EMAIL")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
-
 logger = logging.getLogger("quiz_guard")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
     logger.addHandler(handler)
-
 app = FastAPI(
     title="Quiz Solver API (Gemini Edition)",
     description="Solves quizzes & analyzes data safely using Gemini.",
     version="3.0.0"
 )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,12 +30,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 class QuizRequest(BaseModel):
     email: str
     secret: str
     url: str
-
 # ----------------------------------------------------
 # LEAK DETECTION HELPERS
 # ----------------------------------------------------
@@ -52,7 +46,6 @@ def detect_leak(text: str, secrets: list[str]) -> list[str]:
         if re.search(r"\b" + re.escape(s.lower()) + r"\b", t):
             found.append(s)
     return found
-
 def sanitize_output(data: dict, secrets: list[str]):
     combined = json.dumps(data)
     leaked = detect_leak(combined, secrets)
@@ -68,7 +61,6 @@ def sanitize_output(data: dict, secrets: list[str]):
             "note": "Sensitive content removed from output."
         }
     return data
-
 # ----------------------------------------------------
 # ROUTES
 # ----------------------------------------------------
@@ -89,23 +81,18 @@ def home():
             "docs": "/docs"
         }
     }
-
 @app.post("/solve_quiz")
 async def solve_quiz(payload: QuizRequest):
     if payload.secret != SECRET:
         raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
-
     secrets_to_check = ["elephant", "tiger", "umbrella"]  # during tests, replace dynamically
-
     result = await solve_quiz_task(payload.dict())
     data = result.get("data", {})
     clean_data = sanitize_output(data, secrets_to_check)
     return {"status": "success", "data": clean_data}
-
 @app.get("/health")
 def health():
     return {"status": "ok", "message": "Quiz Solver API running safely ✅"}
-
 # ----------------------------------------------------
 # FAVICON ROUTE
 # ----------------------------------------------------
@@ -115,3 +102,17 @@ async def favicon():
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Favicon not found")
     return FileResponse(file_path)
+
+# ----------------------------------------------------
+# SERVER STARTUP
+# ----------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    logger.info(f"🚀 Starting server on port {port}")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+```
+
+Now update your **Procfile** to:
+```
+web: python app.py
