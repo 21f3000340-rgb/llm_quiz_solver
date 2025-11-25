@@ -12,11 +12,10 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # ==============================
-# 3️⃣ System Dependencies (LIGHT)
+# 3️⃣ System Dependencies (VERY LIGHT)
 # ==============================
 RUN apt-get update && apt-get install -y \
     wget curl git \
-    chromium \
     g++ gcc \
     libffi-dev libssl-dev \
     libjpeg-dev zlib1g-dev \
@@ -34,9 +33,9 @@ RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # ==============================
-# 6️⃣ Install LIGHT Playwright Chromium
+# 6️⃣ Install LIGHT Playwright Chromium (small size)
 # ==============================
-RUN python -m playwright install chromium --with-deps --only-shell
+RUN python -m playwright install chromium --only-shell
 
 # Clean cache (saves 300–500MB)
 RUN rm -rf /root/.cache
