@@ -20,126 +20,148 @@ and generates intelligent insights — powered by Google Gemini and FastAPI.
 
 ---
 
+# 📋 Table of Contents  
+
+- [Overview](#-overview-dark-theme-styled)  
+- [Features](#-key-features)  
+- [Tech Stack](#-tech-stack-dark-mode)  
+- [Project Structure](#-project-structure)  
+- [Installation](#-installation)  
+- [Configuration](#️-configuration)  
+- [Usage](#-usage)  
+- [API Endpoints](#-api-endpoints)  
+- [Tools  Capabilities](#-tools--capabilities)  
+- [How It Works](#-how-it-works)  
+- [License](#-license)  
+- [Author](#-author)
+
+---
+
 ## 🌌 Overview (Dark Theme Styled)
 
 This backend is built for **Data Science Project 2**, designed to autonomously:
 
-✨ Scrape quizzes (even JavaScript-rendered)  
-✨ Parse CSV, XLSX, PDFs, text  
-✨ Analyze and transform datasets  
-✨ Run statistical or ML-like reasoning  
-✨ Generate slide-style summaries  
-✨ Return charts as base64 images  
+✨ Scrape quizzes (including JavaScript-rendered pages via Playwright)  
+✨ Parse CSV, XLSX, PDFs, and APIs  
+✨ Clean and transform datasets  
+✨ Perform reasoning and lightweight ML-style analysis  
+✨ Generate slides & base64 charts  
+✨ Follow multi-step quiz chains until the final task  
 
-Everything runs safely with:
+The system also supports:
 
-- Secret-leak prevention  
-- 3-minute retry logic (matching instructor rules)  
-- Input validation  
-- Clean Docker deployment  
+- **3-minute retry logic** (instructor requirement)  
+- **Secret leak prevention**  
+- **Railway-ready Docker deployment**
 
 ---
 
 ## 🧠 Key Features
 
-### **✔ Autonomous multi-page quiz solving**
-Follows the chain of pages until no next URL is given.
+### ✔ Autonomous multi-page quiz solving  
+Follows every `next_url` until the quiz is completed.
 
-### **✔ True 3-minute retry window**
-If you answer wrong → retries allowed for 3 minutes.  
-Your latest answer overrides the previous ones.
+### ✔ 3-minute retry window  
+Your latest submission within 3 minutes overrides all previous answers.
 
-### **✔ Safe output sanitization**
-Blocks accidental reveal of secret words.
+### ✔ Safe output sanitization  
+Blocks forbidden code-words (`elephant`, `tiger`, `umbrella`, etc).
 
-### **✔ Multi-modal and multi-source data handling**
+### ✔ Multi-modal parsing  
+Supports:  
+HTML • JS-rendered HTML • JSON APIs • CSV • Excel • PDF (PyPDF2)
 
-- HTML (static + JS rendered with Playwright)  
-- JSON APIs  
-- CSV / Excel  
-- PDF extraction  
-- DataFrames  
+### ✔ Clean visualization output  
+Generates base64 charts + short slide-style narratives.
 
-### **✔ Fully containerized & cloud ready**
-Runs seamlessly on **Railway**, **Docker Desktop**, **Render**, **Azure**, etc.
+### ✔ Containerized & cloud-ready  
+Deployable to Railway with a single Dockerfile.
 
 ---
 
 ## ⚙️ Tech Stack (Dark Mode)
 
-| Component | Technology |
-|----------|------------|
-| Backend | FastAPI |
-| AI Model | Gemini 2.5 Flash |
-| Web Scraping | Playwright (Chromium) |
-| Deployment | Docker + Railway |
-| Language | Python 3.12 |
-| Server | Uvicorn |
+| Component      | Technology            |
+|----------------|------------------------|
+| Backend        | FastAPI                |
+| AI Model       | Gemini 2.5 Flash       |
+| Scraping       | Playwright Chromium    |
+| Deployment     | Docker + Railway       |
+| Language       | Python 3.12            |
+| Server         | Uvicorn                |
 
 ---
 
 ## 📁 Project Structure
+
+```
 llm_quiz_solver/
 │
-├── app.py # FastAPI backend + retry logic + leak detection
-├── solver.py # Core quiz solver using Gemini
+├── app.py                 # FastAPI backend with session logic, leak checks
+├── solver.py              # Core Gemini-based quiz solving engine
+├── tools/                 # (Optional) helper utilities
 │
-├── tools/ # Optional helper tool scripts (scraper, downloader etc.)
-│
-├── Dockerfile # Production-ready Docker build
-├── requirements.txt # Python dependencies
-├── Procfile # Railway start command (optional)
+├── Dockerfile             # Production-ready container
+├── requirements.txt       # Python dependencies
+├── Procfile               # Railway process definition
 ├── .dockerignore
 ├── .gitignore
-├── .env.example
-└── README.md
+├── .env.example           # Example environment variables
+└── README.md              # This documentation
+```
 
 ---
 
 # 📦 Installation
 
-### **Prerequisites**
-- Python **3.12+**
-- Docker (optional)
-- Railway account (deployment)
-- Google Gemini API key
-
----
-
-# 🛠️ Installation Steps
-
-## **1. Clone the Repository**
-
+## 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/yourusername/llm_quiz_solver.git
+git clone https://github.com/21f3000340-rgb/llm_quiz_solver.git
 cd llm_quiz_solver
+```
 
-
----
-2. Install dependencies
-Option A: Using pip
+## 2️⃣ Install Dependencies (Option A — pip)
+```bash
 pip install -r requirements.txt
 playwright install chromium
-Option B: Using Docker (recommended)
+```
+
+## 3️⃣ Install with Docker (Option B — recommended)
+```bash
 docker build -t quiz-solver .
+```
 
-⚙️ Configuration
+---
 
-Create a .env file:
+# 🛠 Configuration
+
+Create a `.env` file:
+
+```env
 USER_EMAIL=your_email@example.com
 USER_SECRET=your_secret_key
-GITHUB_REPO=https://github.com/yourusername/llm_quiz_solver
+GITHUB_REPO=https://github.com/21f3000340-rgb/llm_quiz_solver
 GEMINI_API_KEY=your_gemini_api_key_here
-Never commit .env to GitHub.
+```
 
-🚀 Usage
-Start the server (pip)
+> ⚠️ **Never commit `.env` to GitHub**
+
+---
+
+# 🚀 Usage
+
+## Run (pip)
+```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
+```
 
-Start the server (Docker)
+## Run (Docker)
+```bash
 docker run --env-file .env -p 8000:8000 quiz-solver
+```
 
-Test API
+## Test API
+```bash
 curl -X POST http://localhost:8000/solve_quiz \
   -H "Content-Type: application/json" \
   -d '{
@@ -147,107 +169,89 @@ curl -X POST http://localhost:8000/solve_quiz \
     "secret": "your_secret_string",
     "url": "https://example.com/quiz"
   }'
-
-🌐 API Endpoints
-POST /solve_quiz
-Starts solving a quiz.
-
-GET /health
-
-Returns:
-{"status":"ok","message":"Quiz Solver API running safely ✅"}
-
-🛠 Tools & Capabilities
-
-Your solver can:
-
-1. Scrape JS websites
-
-via Playwright Chromium.
-
-2. Load APIs
-
-Handles JSON endpoints; auto-detects list/dict structures.
-
-3. Parse Data Files
-
-CSV, XLSX, PDF via PyPDF2.
-
-4. Run LLM reasoning
-
-Gemini analyzes patterns, quizzes, slides, insights.
-
-5. Generate charts
-
-Charts returned as data:image/png;base64,....
-
-6. Follow next_url chains
-
-Until quiz ends.
-
-🧠 How It Works
-1. Request Received
-
-FastAPI validates email + secret
-Starts 3-minute session window.
-
-2. Solver Loads Content
-
-Depending on type:
-
-HTML
-
-JS-rendered page
-
-CSV/XLSX
-
-JSON API
-
-PDF
-
-3. Gemini Processing
-
-LLM creates:
-
-summary
-
-analysis
-
-QA
-
-slides
-
-chart
-
-next_url
-
-4. Session Memory
-
-Your API tracks
-"latest submission within 3 minutes"
-matching official rules.
-
-5. Continue Chain
-
-If next_url exists → solve next URL.
-
-6. End Condition
-
-When LLM returns no new URL → quiz completed.
-
-## 📄 License
-
-This project is licensed under the **[MIT License](LICENSE)**.  
-Click to view the full license text.
+```
 
 ---
 
-### 👤 Author  
+# 🌐 API Endpoints
+
+### **POST /solve_quiz**
+Starts solving a quiz.
+
+### **GET /health**
+Returns:
+```json
+{"status":"ok","message":"Quiz Solver API running safely ✅"}
+```
+
+### **GET /favicon.ico**
+Loads your custom icon.
+
+---
+
+# 🛠 Tools & Capabilities
+
+Your solver supports:
+
+### **1. JavaScript-rendered scraping**  
+Playwright Chromium → full DOM extraction.
+
+### **2. API loading**  
+JSON, nested structures, auto-normalization.
+
+### **3. File parsing**  
+CSV, Excel, PDF (PyPDF2).
+
+### **4. LLM data reasoning**  
+Summary • QA • Insight • Table analysis • ML-style reasoning.
+
+### **5. Chart generation**  
+Returned as `"data:image/png;base64,..."`.
+
+### **6. Multi-page chaining**  
+Follows `next_url` until quiz ends.
+
+---
+
+# 🧠 How It Works
+
+### **1. FastAPI receives request**
+Validates secret & email  
+Starts 3-minute retry window.
+
+### **2. Solver loads data**
+HTML / JS / PDFs / APIs → cleaned → passed to Gemini.
+
+### **3. Gemini analyzes**
+Generates:
+- summary  
+- analysis  
+- QA  
+- slides  
+- chart  
+- next_url  
+
+### **4. Session memory**
+Maintains latest answer for 3 minutes.
+
+### **5. Multi-page solving**
+If `next_url` → continue  
+If none → quiz finished.
+
+---
+
+# 📄 License
+
+This project is licensed under the **[MIT License](LICENSE)**.
+
+---
+
+# 👤 Author
+
 **Sanjeev Kumar Gogoi**  
-Course: Data Science Project 2
+Working Professional • Data Science Project 2
 
 📌 **GitHub Repository:**  
-👉 [https://github.com/21f3000340-rgb/llm_quiz_solver](https://github.com/21f3000340-rgb/llm_quiz_solver)
+👉 https://github.com/21f3000340-rgb/llm_quiz_solver  
 
-For questions or issues, please open an issue on the GitHub repository.
-
+For issues or suggestions, please open an Issue in the repository.
