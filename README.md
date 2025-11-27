@@ -1,13 +1,14 @@
 <p align="center">
-  <img src="logo.png" alt="Quiz Solver Logo" width="180"/>
+  <img src="./logo.png" alt="Quiz Solver Logo" width="200" style="border-radius: 50%;"/>
 </p>
 
 <h1 align="center">🌑🧠 Quiz Solver API — Gemini Edition</h1>
 
-<p align="center">
-A secure, containerized AI backend that solves quizzes, scrapes web data, processes files,  
-and generates intelligent insights — powered by Google Gemini and FastAPI.
+<p align="center" style="font-size: 1.1rem;">
+A secure, containerized AI backend that solves quizzes, scrapes dynamic web pages,  
+processes files, and generates intelligent insights — powered by Google Gemini.
 </p>
+
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge"/>
@@ -255,3 +256,4 @@ Working Professional • Data Science Project 2
 👉 https://github.com/21f3000340-rgb/llm_quiz_solver  
 
 For issues or suggestions, please open an Issue in the repository.
+
