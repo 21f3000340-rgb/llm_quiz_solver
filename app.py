@@ -3,8 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 import os, re, json, logging
+
 from solver import solve_quiz_task
+
+
 # ----------------------------------------------------
 # ENVIRONMENT & SETUP
 # ----------------------------------------------------
@@ -12,17 +16,20 @@ load_dotenv()
 SECRET = os.getenv("USER_SECRET")
 EMAIL = os.getenv("USER_EMAIL")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
+
 logger = logging.getLogger("quiz_guard")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
     logger.addHandler(handler)
+
 app = FastAPI(
     title="Quiz Solver API (Gemini Edition)",
     description="Solves quizzes & analyzes data safely using Gemini.",
     version="3.0.0"
 )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,10 +37,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 class QuizRequest(BaseModel):
     email: str
     secret: str
     url: str
+
+
+# ----------------------------------------------------
+# 3-MINUTE RETRY SESSION MEMORY
+# ----------------------------------------------------
+SESSIONS = {}   # Stores session data for each quiz URL
+
+
+def get_session_key(email, url):
+    return f"{email}:{url}"
+
+
 # ----------------------------------------------------
 # LEAK DETECTION HELPERS
 # ----------------------------------------------------
@@ -46,21 +67,33 @@ def detect_leak(text: str, secrets: list[str]) -> list[str]:
         if re.search(r"\b" + re.escape(s.lower()) + r"\b", t):
             found.append(s)
     return found
+
+
 def sanitize_output(data: dict, secrets: list[str]):
     combined = json.dumps(data)
     leaked = detect_leak(combined, secrets)
+
     if leaked:
         logger.warning(f"🚨 Leak detected: {leaked}")
         for key, val in data.items():
             if isinstance(val, str):
                 for s in leaked:
-                    data[key] = re.sub(r"\b" + re.escape(s) + r"\b", "[REDACTED]", val, flags=re.IGNORECASE)
+                    data[key] = re.sub(
+                        r"\b" + re.escape(s) + r"\b",
+                        "[REDACTED]",
+                        val,
+                        flags=re.IGNORECASE
+                    )
+
         data["safety_action"] = {
             "action": "redacted",
             "leaked_tokens": leaked,
             "note": "Sensitive content removed from output."
         }
+
     return data
+
+
 # ----------------------------------------------------
 # ROUTES
 # ----------------------------------------------------
@@ -81,18 +114,61 @@ def home():
             "docs": "/docs"
         }
     }
+
+
 @app.post("/solve_quiz")
 async def solve_quiz(payload: QuizRequest):
+    # -------------------
+    # Validate Secret Key
+    # -------------------
     if payload.secret != SECRET:
         raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
-    secrets_to_check = ["elephant", "tiger", "umbrella"]  # during tests, replace dynamically
+
+    key = get_session_key(payload.email, payload.url)
+    now = datetime.utcnow()
+
+    # -------------------------------------
+    # Create session if first time for URL
+    # -------------------------------------
+    if key not in SESSIONS:
+        SESSIONS[key] = {
+            "start": now,
+            "last_response": None
+        }
+
+    session = SESSIONS[key]
+
+    # -------------------------------------
+    # Check 3-minute retry window
+    # -------------------------------------
+    if now - session["start"] > timedelta(minutes=3):
+        # Retry window expired → return last known next_url
+        return {
+            "status": "timeout",
+            "message": "3-minute retry window closed.",
+            "next_url": session["last_response"].get("next_url") if session["last_response"] else None
+        }
+
+    # -------------------------------------
+    # Normal Solve (Within 3 minutes)
+    # -------------------------------------
+    secrets_to_check = ["elephant", "tiger", "umbrella"]
+
     result = await solve_quiz_task(payload.dict())
     data = result.get("data", {})
+
+    # Update last response for this session
+    session["last_response"] = data
+
     clean_data = sanitize_output(data, secrets_to_check)
     return {"status": "success", "data": clean_data}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "message": "Quiz Solver API running safely ✅"}
+
+
 # ----------------------------------------------------
 # FAVICON ROUTE
 # ----------------------------------------------------
@@ -102,6 +178,7 @@ async def favicon():
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Favicon not found")
     return FileResponse(file_path)
+
 
 # ----------------------------------------------------
 # SERVER STARTUP
