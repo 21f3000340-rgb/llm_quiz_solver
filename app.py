@@ -10,7 +10,7 @@ from solver import solve_quiz_task
 
 
 # ----------------------------------------------------
-# ENVIRONMENT & SETUP
+# ENV + LOGGING
 # ----------------------------------------------------
 load_dotenv()
 SECRET = os.getenv("USER_SECRET")
@@ -46,25 +46,23 @@ class QuizRequest(BaseModel):
 
 
 # ----------------------------------------------------
-# 3-MINUTE RETRY SESSION MEMORY
+# 3-MIN SESSION MEMORY
 # ----------------------------------------------------
-SESSIONS = {}   # Stores session data for each quiz URL
+SESSIONS = {}     # Stores session state per user email only
 
 
-def get_session_key(email, url):
-    return f"{email}:{url}"
+def get_session_key(email: str):
+    return email.lower().strip()
 
 
 # ----------------------------------------------------
-# LEAK DETECTION HELPERS
+# LEAK DETECTION
 # ----------------------------------------------------
-def detect_leak(text: str, secrets: list[str]) -> list[str]:
+def detect_leak(text: str, secrets: list[str]):
     found = []
     t = text.lower()
     for s in secrets:
-        if not s:
-            continue
-        if re.search(r"\b" + re.escape(s.lower()) + r"\b", t):
+        if s and re.search(r"\b" + re.escape(s.lower()) + r"\b", t):
             found.append(s)
     return found
 
@@ -75,15 +73,12 @@ def sanitize_output(data: dict, secrets: list[str]):
 
     if leaked:
         logger.warning(f"🚨 Leak detected: {leaked}")
+
         for key, val in data.items():
             if isinstance(val, str):
                 for s in leaked:
-                    data[key] = re.sub(
-                        r"\b" + re.escape(s) + r"\b",
-                        "[REDACTED]",
-                        val,
-                        flags=re.IGNORECASE
-                    )
+                    val = re.sub(r"\b" + re.escape(s) + r"\b", "[REDACTED]", val, flags=re.IGNORECASE)
+                data[key] = val
 
         data["safety_action"] = {
             "action": "redacted",
@@ -118,46 +113,37 @@ def home():
 
 @app.post("/solve_quiz")
 async def solve_quiz(payload: QuizRequest):
-    # -------------------
-    # Validate Secret Key
-    # -------------------
+
+    # Secret check
     if payload.secret != SECRET:
         raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
 
-    key = get_session_key(payload.email, payload.url)
+    email_key = get_session_key(payload.email)
     now = datetime.utcnow()
 
-    # -------------------------------------
-    # Create session if first time for URL
-    # -------------------------------------
-    if key not in SESSIONS:
-        SESSIONS[key] = {
+    # Create session if not exists
+    if email_key not in SESSIONS:
+        SESSIONS[email_key] = {
             "start": now,
             "last_response": None
         }
 
-    session = SESSIONS[key]
+    session = SESSIONS[email_key]
 
-    # -------------------------------------
-    # Check 3-minute retry window
-    # -------------------------------------
+    # 3-minute window check
     if now - session["start"] > timedelta(minutes=3):
-        # Retry window expired → return last known next_url
         return {
             "status": "timeout",
-            "message": "3-minute retry window closed.",
             "next_url": session["last_response"].get("next_url") if session["last_response"] else None
         }
 
-    # -------------------------------------
-    # Normal Solve (Within 3 minutes)
-    # -------------------------------------
+    # Solve normally within window
     secrets_to_check = ["elephant", "tiger", "umbrella"]
 
     result = await solve_quiz_task(payload.dict())
     data = result.get("data", {})
 
-    # Update last response for this session
+    # Update last response
     session["last_response"] = data
 
     clean_data = sanitize_output(data, secrets_to_check)
@@ -169,9 +155,6 @@ def health():
     return {"status": "ok", "message": "Quiz Solver API running safely ✅"}
 
 
-# ----------------------------------------------------
-# FAVICON ROUTE
-# ----------------------------------------------------
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     file_path = os.path.join(os.path.dirname(__file__), "favicon.ico")
@@ -180,9 +163,6 @@ async def favicon():
     return FileResponse(file_path)
 
 
-# ----------------------------------------------------
-# SERVER STARTUP
-# ----------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
