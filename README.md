@@ -79,23 +79,16 @@ Runs seamlessly on **Railway**, **Docker Desktop**, **Render**, **Azure**, etc.
 ---
 
 ## 📁 Project Structure
-
 llm_quiz_solver/
 │
-├── app.py # FastAPI service + retry window logic
-├── solver.py # Gemini-based quiz solver
-├── agent.py # (optional) LangGraph autonomous agent
+├── app.py # FastAPI backend + retry logic + leak detection
+├── solver.py # Core quiz solver using Gemini
 │
-├── tools/ # Modular scraping/execution tools
-│ ├── get_rendered_html.py
-│ ├── download_file.py
-│ ├── run_code.py
-│ ├── post_request.py
-│ └── add_dependencies.py
+├── tools/ # Optional helper tool scripts (scraper, downloader etc.)
 │
-├── Dockerfile
-├── requirements.txt
-├── Procfile
+├── Dockerfile # Production-ready Docker build
+├── requirements.txt # Python dependencies
+├── Procfile # Railway start command (optional)
 ├── .dockerignore
 ├── .gitignore
 ├── .env.example
@@ -103,98 +96,158 @@ llm_quiz_solver/
 
 ---
 
-## 🔐 Environment Variables
+# 📦 Installation
 
-Create a `.env` file:
+### **Prerequisites**
+- Python **3.12+**
+- Docker (optional)
+- Railway account (deployment)
+- Google Gemini API key
 
-```env
+---
+
+# 🛠️ Installation Steps
+
+## **1. Clone the Repository**
+
+```bash
+git clone https://github.com/yourusername/llm_quiz_solver.git
+cd llm_quiz_solver
+
+
+---
+2. Install dependencies
+Option A: Using pip
+pip install -r requirements.txt
+playwright install chromium
+Option B: Using Docker (recommended)
+docker build -t quiz-solver .
+
+⚙️ Configuration
+
+Create a .env file:
 USER_EMAIL=your_email@example.com
 USER_SECRET=your_secret_key
 GITHUB_REPO=https://github.com/yourusername/llm_quiz_solver
 GEMINI_API_KEY=your_gemini_api_key_here
-⚠️ Never commit .env files to GitHub.
+Never commit .env to GitHub.
 
-🧩 Local Development
-1. Clone
-git clone https://github.com/yourusername/llm_quiz_solver.git
-cd llm_quiz_solver
+🚀 Usage
+Start the server (pip)
+uvicorn app:app --host 0.0.0.0 --port 8000
 
-2. Build Docker
-docker build -t quiz-solver:latest .
+Start the server (Docker)
+docker run --env-file .env -p 8000:8000 quiz-solver
 
-3. Run
-docker run --env-file .env -p 8000:8000 quiz-solver:latest
+Test API
+curl -X POST http://localhost:8000/solve_quiz \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "your.email@example.com",
+    "secret": "your_secret_string",
+    "url": "https://example.com/quiz"
+  }'
 
-4. Access
-
-Home → http://localhost:8000
-
-Docs → http://localhost:8000/docs
-
-Health → http://localhost:8000/health
-
-☁️ Deployment on Railway (Dark Mode)
-
-Push repo to GitHub
-
-Create new Railway project → select your repo
-
-Add environment variables
-
-Railway auto-builds your Dockerfile
-
-Open deployed URL 🎉
-
-📡 API Endpoints
+🌐 API Endpoints
 POST /solve_quiz
+Starts solving a quiz.
 
-Input fields:
-
-email
-
-secret
-
-url
+GET /health
 
 Returns:
+{"status":"ok","message":"Quiz Solver API running safely ✅"}
+
+🛠 Tools & Capabilities
+
+Your solver can:
+
+1. Scrape JS websites
+
+via Playwright Chromium.
+
+2. Load APIs
+
+Handles JSON endpoints; auto-detects list/dict structures.
+
+3. Parse Data Files
+
+CSV, XLSX, PDF via PyPDF2.
+
+4. Run LLM reasoning
+
+Gemini analyzes patterns, quizzes, slides, insights.
+
+5. Generate charts
+
+Charts returned as data:image/png;base64,....
+
+6. Follow next_url chains
+
+Until quiz ends.
+
+🧠 How It Works
+1. Request Received
+
+FastAPI validates email + secret
+Starts 3-minute session window.
+
+2. Solver Loads Content
+
+Depending on type:
+
+HTML
+
+JS-rendered page
+
+CSV/XLSX
+
+JSON API
+
+PDF
+
+3. Gemini Processing
+
+LLM creates:
 
 summary
 
 analysis
 
-qa pairs
+QA
 
 slides
 
-chart (base64)
-
-answer
+chart
 
 next_url
 
-GET /health
+4. Session Memory
 
-Quick readiness probe.
+Your API tracks
+"latest submission within 3 minutes"
+matching official rules.
 
-GET /favicon.ico
+5. Continue Chain
 
-Supports custom favicon.
+If next_url exists → solve next URL.
 
-🛡 Security & Reliability
+6. End Condition
 
-🛡 Strict secret enforcement
-🛡 Leak detection for code words
-🛡 Sanitizes LLM outputs
-🛡 3-minute retry guarantee
-🛡 No secrets stored inside Docker
+When LLM returns no new URL → quiz completed.
 
-👤 Author
+## 📄 License
 
-Sanjeev Kumar Gogoi
-Working Professional • Data Science Project 2
-Focused on automation, agents, and applied data workflows.
+This project is licensed under the **[MIT License](LICENSE)**.  
+Click to view the full license text.
 
-📜 License
+---
 
-Licensed under MIT License.
-Feel free to use, extend, or distribute with attribution.
+### 👤 Author  
+**Sanjeev Kumar Gogoi**  
+Course: Data Science Project 2
+
+📌 **GitHub Repository:**  
+👉 [https://github.com/21f3000340-rgb/llm_quiz_solver](https://github.com/21f3000340-rgb/llm_quiz_solver)
+
+For questions or issues, please open an issue on the GitHub repository.
+
