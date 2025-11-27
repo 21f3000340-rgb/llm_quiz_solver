@@ -1,121 +1,200 @@
-# 🧠 Quiz Solver API (Gemini Edition)
+<p align="center">
+  <img src="logo.png" alt="Quiz Solver Logo" width="180"/>
+</p>
 
-A production-ready **FastAPI** application developed as part of **Data Science Project 2**.
-This tool automates quiz solving and data interpretation using advanced AI models, built with a focus on security, scalability, and deployment readiness.
+<h1 align="center">🌑🧠 Quiz Solver API — Gemini Edition</h1>
+
+<p align="center">
+A secure, containerized AI backend that solves quizzes, scrapes web data, processes files,  
+and generates intelligent insights — powered by Google Gemini and FastAPI.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/FastAPI-Framework-009688?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Docker-Ready-0db7ed?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Railway-Deployed-111111?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge"/>
+</p>
 
 ---
 
-## 🚀 Overview
+## 🌌 Overview (Dark Theme Styled)
 
-The **Quiz Solver API** provides a secure backend for solving and analyzing quiz-related tasks.
-It includes safety checks for data leaks, efficient task handling, and ready-to-use Docker deployment for Railway or any containerized environment.
+This backend is built for **Data Science Project 2**, designed to autonomously:
+
+✨ Scrape quizzes (even JavaScript-rendered)  
+✨ Parse CSV, XLSX, PDFs, text  
+✨ Analyze and transform datasets  
+✨ Run statistical or ML-like reasoning  
+✨ Generate slide-style summaries  
+✨ Return charts as base64 images  
+
+Everything runs safely with:
+
+- Secret-leak prevention  
+- 3-minute retry logic (matching instructor rules)  
+- Input validation  
+- Clean Docker deployment  
 
 ---
 
-## ⚙️ Tech Stack
+## 🧠 Key Features
 
-* **Python 3.12**
-* **FastAPI** – backend framework
-* **Uvicorn** – ASGI web server
-* **Docker** – containerization
-* **Playwright (Chromium)** – for automation tasks
-* **Railway** – hosting & deployment
+### **✔ Autonomous multi-page quiz solving**
+Follows the chain of pages until no next URL is given.
+
+### **✔ True 3-minute retry window**
+If you answer wrong → retries allowed for 3 minutes.  
+Your latest answer overrides the previous ones.
+
+### **✔ Safe output sanitization**
+Blocks accidental reveal of secret words.
+
+### **✔ Multi-modal and multi-source data handling**
+
+- HTML (static + JS rendered with Playwright)  
+- JSON APIs  
+- CSV / Excel  
+- PDF extraction  
+- DataFrames  
+
+### **✔ Fully containerized & cloud ready**
+Runs seamlessly on **Railway**, **Docker Desktop**, **Render**, **Azure**, etc.
+
+---
+
+## ⚙️ Tech Stack (Dark Mode)
+
+| Component | Technology |
+|----------|------------|
+| Backend | FastAPI |
+| AI Model | Gemini 2.5 Flash |
+| Web Scraping | Playwright (Chromium) |
+| Deployment | Docker + Railway |
+| Language | Python 3.12 |
+| Server | Uvicorn |
 
 ---
 
 ## 📁 Project Structure
 
-```
 llm_quiz_solver/
 │
-├── app.py               # Main FastAPI application
-├── solver.py            # Core quiz-solving logic
-├── requirements.txt     # Python dependencies
-├── Dockerfile           # Docker build instructions
-├── .dockerignore        # Ignored files for Docker build
-├── .env                 # Local environment variables (not pushed to GitHub)
-├── Procfile             # Optional process definition (for non-Docker deploys)
-├── runtime.txt          # Optional Python runtime version
-└── README.md            # Project documentation
-```
+├── app.py # FastAPI service + retry window logic
+├── solver.py # Gemini-based quiz solver
+├── agent.py # (optional) LangGraph autonomous agent
+│
+├── tools/ # Modular scraping/execution tools
+│ ├── get_rendered_html.py
+│ ├── download_file.py
+│ ├── run_code.py
+│ ├── post_request.py
+│ └── add_dependencies.py
+│
+├── Dockerfile
+├── requirements.txt
+├── Procfile
+├── .dockerignore
+├── .gitignore
+├── .env.example
+└── README.md
 
 ---
 
 ## 🔐 Environment Variables
 
-Before running or deploying, create a `.env` file in the project root with the following keys:
+Create a `.env` file:
 
-```
+```env
 USER_EMAIL=your_email@example.com
 USER_SECRET=your_secret_key
 GITHUB_REPO=https://github.com/yourusername/llm_quiz_solver
-API_KEY=your_api_key_here   # optional if external API is used
-```
+GEMINI_API_KEY=your_gemini_api_key_here
+⚠️ Never commit .env files to GitHub.
 
-> ⚠️ **Do not** commit or upload your `.env` file to GitHub.
-> It contains sensitive credentials and should remain private.
+🧩 Local Development
+1. Clone
+git clone https://github.com/yourusername/llm_quiz_solver.git
+cd llm_quiz_solver
 
----
+2. Build Docker
+docker build -t quiz-solver:latest .
 
-## 🧩 Local Development
+3. Run
+docker run --env-file .env -p 8000:8000 quiz-solver:latest
 
-1. **Clone the Repository**
+4. Access
 
-   ```bash
-   git clone https://github.com/yourusername/llm_quiz_solver.git
-   cd llm_quiz_solver
-   ```
+Home → http://localhost:8000
 
-2. **Build Docker Image**
+Docs → http://localhost:8000/docs
 
-   ```bash
-   docker build -t quiz-solver:latest .
-   ```
+Health → http://localhost:8000/health
 
-3. **Run the Container**
+☁️ Deployment on Railway (Dark Mode)
 
-   ```bash
-   docker run --env-file .env -p 8000:8000 quiz-solver:latest
-   ```
+Push repo to GitHub
 
-4. **Access the API**
+Create new Railway project → select your repo
 
-   * Home: [http://localhost:8000](http://localhost:8000)
-   * Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-   * Health: [http://localhost:8000/health](http://localhost:8000/health)
+Add environment variables
 
----
+Railway auto-builds your Dockerfile
 
-## ☁️ Deployment on Railway
+Open deployed URL 🎉
 
-1. Push your project to **GitHub**.
-2. On Railway:
+📡 API Endpoints
+POST /solve_quiz
 
-   * Create a **New Project → Deploy from GitHub Repo**.
-   * Add environment variables (`USER_EMAIL`, `USER_SECRET`, `GITHUB_REPO`, and any others).
-3. Railway automatically builds your Dockerfile and runs your container.
-4. Once deployed, access your app at your generated Railway URL.
+Input fields:
 
----
+email
 
-## 🧠 Security Notes
+secret
 
-* Sensitive values are never stored inside the Docker image.
-* The `.env` file is excluded using `.dockerignore` and `.gitignore`.
-* Environment variables are securely injected at runtime (both locally and on Railway).
+url
 
----
+Returns:
 
-## 👤 Author
+summary
 
-**Sanjeev Kumar Gogoi**
-Working Professional | Data Science Project 2
-💼 Exploring tools and technologies in applied data science
-🌐 Developed as part of hands-on learning and automation research
+analysis
 
----
+qa pairs
 
-## 📜 License
+slides
 
-This project is licensed under the [MIT License](LICENSE).
-You’re free to modify and distribute with attribution.
+chart (base64)
+
+answer
+
+next_url
+
+GET /health
+
+Quick readiness probe.
+
+GET /favicon.ico
+
+Supports custom favicon.
+
+🛡 Security & Reliability
+
+🛡 Strict secret enforcement
+🛡 Leak detection for code words
+🛡 Sanitizes LLM outputs
+🛡 3-minute retry guarantee
+🛡 No secrets stored inside Docker
+
+👤 Author
+
+Sanjeev Kumar Gogoi
+Working Professional • Data Science Project 2
+Focused on automation, agents, and applied data workflows.
+
+📜 License
+
+Licensed under MIT License.
+Feel free to use, extend, or distribute with attribution.
