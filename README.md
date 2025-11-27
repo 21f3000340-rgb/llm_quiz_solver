@@ -23,7 +23,7 @@ processes files, and generates intelligent insights — powered by Google Gemini
 
 # 📋 Table of Contents  
 
-- [Overview](#-overview-dark-theme-styled)  
+- [Overview]
 - [Features](#-key-features)  
 - [Tech Stack](#-tech-stack-dark-mode)  
 - [Project Structure](#-project-structure)  
@@ -38,7 +38,7 @@ processes files, and generates intelligent insights — powered by Google Gemini
 
 ---
 
-## 🌌 Overview (Dark Theme Styled)
+## 🌌 Overview 
 
 This backend is built for **Data Science Project 2**, designed to autonomously:
 
@@ -256,4 +256,5 @@ Working Professional • Data Science Project 2
 👉 https://github.com/21f3000340-rgb/llm_quiz_solver  
 
 For issues or suggestions, please open an Issue in the repository.
+
 
