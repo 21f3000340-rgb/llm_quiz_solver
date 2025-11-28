@@ -26,28 +26,28 @@ RUN pip install playwright
 RUN playwright install --with-deps chromium
 
 # ==============================
-# 4) Install uv (dependency manager)
+# 4) Install uv
 # ==============================
 RUN pip install uv
 
 # ==============================
-# 5) Copy project FIRST (IMPORTANT)
+# 5) Prepare App Folder
 # ==============================
 WORKDIR /app
+
+# Copy only pyproject + uv.lock FIRST
+COPY pyproject.toml uv.lock ./
+
+# Install deps
+RUN uv sync || uv sync
+
+# ==============================
+# 6) Copy full project
+# ==============================
 COPY . .
 
-# Generate lockfile inside container
-RUN uv lock
-
-# Install all dependencies
-RUN uv sync --frozen
-
 # ==============================
-# 6) Expose port (Railway uses 8080)
+# 7) Expose & Run
 # ==============================
 EXPOSE 8080
-
-# ==============================
-# 7) Start the app
-# ==============================
 CMD ["uv", "run", "app.py"]
