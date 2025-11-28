@@ -319,7 +319,7 @@ docker run -p 8080:8080\
   llm-analysis-agent
 ```
 
-### Deploy to HuggingFace Spaces
+### Deploy to Railway
 
 1. Create a new Space with Docker SDK
 2. Push this repository to your Space
@@ -410,3 +410,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 For questions or issues, please open an issue on the [GitHub repository](https://github.com/21f3000340-rgb/llm_quiz_solver)
 ).
+
