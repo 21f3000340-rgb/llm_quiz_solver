@@ -1,261 +1,412 @@
+---
+title: Quiz Solver API (Gemini Edition)
+emoji: 🏃
+colorFrom: red
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 8080
+---
+
 <p align="center">
   <img src="./logo.png" alt="Quiz Solver Logo" width="200" style="border-radius: 50%;"/>
 </p>
 
 <h1 align="center">🌑🧠 Quiz Solver API — Gemini Edition</h1>
 
-<p align="center" style="font-size: 1.1rem;">
-A secure, containerized AI backend that solves quizzes, scrapes dynamic web pages,  
-processes files, and generates intelligent insights — powered by Google Gemini.
-</p>
+# Quiz Solver API(Gemini Edition)
 
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/FastAPI-Framework-009688?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Docker-Ready-0db7ed?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Railway-Deployed-111111?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge"/>
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.121.3+-green.svg)](https://fastapi.tiangolo.com/)
 
----
+An intelligent, autonomous agent built with LangGraph and LangChain that solves data-related quizzes involving web scraping, data processing, analysis, and visualization tasks. The system uses Google's Gemini 2.5 Flash model to orchestrate tool usage and make decisions.
 
-# 📋 Table of Contents  
+## 📋 Table of Contents
 
-- [Overview](#-overview)
-- [Features](#-key-features)  
-- [Tech Stack](#-tech-stack-dark-mode)  
-- [Project Structure](#-project-structure)  
-- [Installation](#-installation)  
-- [Configuration](#️-configuration)  
-- [Usage](#-usage)  
-- [API Endpoints](#-api-endpoints)  
-- [Tools  Capabilities](#-tools--capabilities)  
-- [How It Works](#-how-it-works)  
-- [License](#-license)  
-- [Author](#-author)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [API Endpoints](#api-endpoints)
+- [Tools &amp; Capabilities](#tools--capabilities)
+- [Docker Deployment](#docker-deployment)
+- [How It Works](#how-it-works)
+- [License](#license)
 
----
+## 🔍 Overview
 
-## 🌌 Overview 
+This backend receives a quiz page URL → processes it → scrapes → downloads files → analyzes → submits answers → follows next_url → and finishes with `END`.
 
-This backend is built for **Data Science Project 2**, designed to autonomously:
+It uses:
 
-✨ Scrape quizzes (including JavaScript-rendered pages via Playwright)  
-✨ Parse CSV, XLSX, PDFs, and APIs  
-✨ Clean and transform datasets  
-✨ Perform reasoning and lightweight ML-style analysis  
-✨ Generate slides & base64 charts  
-✨ Follow multi-step quiz chains until the final task  
+- LangGraph state machine  
+- Gemini Flash for reasoning  
+- Tools for scraping, downloads, OCR, code execution  
+- Strict timeout protection  
+- Background task execution using FastAPI  
 
-The system also supports:
+The system receives quiz URLs via a REST API, navigates through multiple quiz pages, solves each task using LLM-powered reasoning and specialized tools, and submits answers back to the evaluation server.
 
-- **3-minute retry logic** (instructor requirement)  
-- **Secret leak prevention**  
-- **Railway-ready Docker deployment**
+## 🏗️ Architecture
 
----
+The project uses a **LangGraph state machine** architecture with the following components:
 
-## 🧠 Key Features
+```
+┌─────────────┐
+│   FastAPI   │  ← Receives POST requests with quiz URLs
+│   Server    │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Agent     │  ← LangGraph orchestrator with Gemini 2.5 Flash
+│   (LLM)     │
+└──────┬──────┘
+       │
+       ├────────────┬────────────┬─────────────┬──────────────┐
+       ▼            ▼            ▼             ▼              ▼
+   [Scraper]   [Downloader]  [Code Exec]  [POST Req]  [Add Deps]
+```
 
-### ✔ Autonomous multi-page quiz solving  
-Follows every `next_url` until the quiz is completed.
+### Key Components:
 
-### ✔ 3-minute retry window  
-Your latest submission within 3 minutes overrides all previous answers.
+1. **FastAPI Server** (`main.py`): Handles incoming POST requests, validates secrets, and triggers the agent
+2. **LangGraph Agent** (`solver.py`): State machine that coordinates tool usage and decision-making
+3. **Tools Package** (`tools/`): Modular tools for different capabilities
+4. **LLM**: Google Gemini 2.5 Flash with rate limiting (9 requests per minute)
 
-### ✔ Safe output sanitization  
-Blocks forbidden code-words (`elephant`, `tiger`, `umbrella`, etc).
+## ✨ Features
 
-### ✔ Multi-modal parsing  
-Supports:  
-HTML • JS-rendered HTML • JSON APIs • CSV • Excel • PDF (PyPDF2)
-
-### ✔ Clean visualization output  
-Generates base64 charts + short slide-style narratives.
-
-### ✔ Containerized & cloud-ready  
-Deployable to Railway with a single Dockerfile.
-
----
-
-## ⚙️ Tech Stack (Dark Mode)
-
-| Component      | Technology            |
-|----------------|------------------------|
-| Backend        | FastAPI                |
-| AI Model       | Gemini 2.5 Flash       |
-| Scraping       | Playwright Chromium    |
-| Deployment     | Docker + Railway       |
-| Language       | Python 3.12            |
-| Server         | Uvicorn                |
-
----
+- ✅ **Autonomous multi-step problem solving**: Chains together multiple quiz pages
+- ✅ **Dynamic JavaScript rendering**: Uses Playwright for client-side rendered pages
+- ✅ **Code generation & execution**: Writes and runs Python code for data tasks
+- ✅ **Flexible data handling**: Downloads files, processes PDFs, CSVs, images, etc.
+- ✅ **Self-installing dependencies**: Automatically adds required Python packages
+- ✅ **Robust error handling**: Retries failed attempts within time limits
+- ✅ **Docker containerization**: Ready for deployment on HuggingFace Spaces or cloud platforms
+- ✅ **Rate limiting**: Respects API quotas with exponential backoff
 
 ## 📁 Project Structure
 
 ```
-llm_quiz_solver/
+testing-llm/
 │
-├── app.py                 # FastAPI backend with session logic, leak checks
-├── solver.py              # Core Gemini-based quiz solving engine
-├── tools/                 # (Optional) helper utilities
+├── app.py
+├── solver.py
+├── shared_store.py
+├── pyproject.toml
+├── uv.lock
+├── tools/
+│   ├── __init__.py
+│   ├── get_rendered_html.py
+│   ├── run_code.py
+│   ├── download_file.py
+│   ├── post_request.py
+│   ├── add_dependencies.py
+│   ├── ocr_image_tool.py
+│   ├── transcribe_audio.py
+│   ├── encode_image_to_base64.py
 │
-├── Dockerfile             # Production-ready container
-├── requirements.txt       # Python dependencies
-├── Procfile               # Railway process definition
-├── .dockerignore
-├── .gitignore
-├── .env.example           # Example environment variables
-└── README.md              # This documentation
+└── README.md
+
 ```
 
----
+## 📦 Installation
 
-# 📦 Installation
+### Prerequisites
 
-## 1️⃣ Clone the Repository
+- Python 3.12 or higher
+- [uv](https://github.com/astral-sh/uv) package manager (recommended) or pip
+- Git
+
+### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/21f3000340-rgb/llm_quiz_solver.git
 cd llm_quiz_solver
+
 ```
 
-## 2️⃣ Install Dependencies (Option A — pip)
+### Step 2: Install Dependencies
+
+#### Option A: Using `uv` (Recommended)
+
+
+Ensure you have uv installed, then sync the project:
+
+```
+# Install uv if you haven't already  
+pip install uv
+
+# Sync dependencies  
+uv sync
+uv run playwright install chromium
+```
+
+Start the FastAPI server:
+```
+uv run app.py
+```
+The server will start at ```http://0.0.0.0:8080```.
+
+#### Option B: Using `pip`
+
 ```bash
-pip install -r requirements.txt
+# Create virtual environment
+python -m venv venv
+.\venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
+
+# Install dependencies
+pip install -e .
+
+# Install Playwright browsers
 playwright install chromium
 ```
 
-## 3️⃣ Install with Docker (Option B — recommended)
-```bash
-docker build -t quiz-solver .
-```
+## ⚙️ Configuration
 
----
+### Environment Variables
 
-# 🛠 Configuration
-
-Create a `.env` file:
+Create a `.env` file in the project root:
 
 ```env
-USER_EMAIL=your_email@example.com
-USER_SECRET=your_secret_key
-GITHUB_REPO=https://github.com/21f3000340-rgb/llm_quiz_solver
-GEMINI_API_KEY=your_gemini_api_key_here
+# Your credentials from the Google Form submission
+EMAIL=your.email@example.com
+SECRET=your_secret_string
+
+# Google Gemini API Key
+GOOGLE_API_KEY=your_gemini_api_key_here
 ```
 
-> ⚠️ **Never commit `.env` to GitHub**
+### Getting a Gemini API Key
 
----
+1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Create a new API key
+3. Copy it to your `.env` file
 
-# 🚀 Usage
+## 🚀 Usage
 
-## Run (pip)
+### Local Development
+
+Start the FastAPI server:
+
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000
+# If using uv
+uv run main.py
+
+# If using standard Python
+python main.py
 ```
 
-## Run (Docker)
-```bash
-docker run --env-file .env -p 8000:8000 quiz-solver
-```
+The server will start on `http://0.0.0.0:8080`
 
-## Test API
+### Testing the Endpoint
+
+Send a POST request to test your setup:
+
 ```bash
-curl -X POST http://localhost:8000/solve_quiz \
+curl -X POST http://localhost:8080/solve \
   -H "Content-Type: application/json" \
   -d '{
     "email": "your.email@example.com",
     "secret": "your_secret_string",
-    "url": "https://example.com/quiz"
+    "url": "https://tds-llm-analysis.s-anand.net/demo"
   }'
 ```
 
----
+Expected response:
 
-# 🌐 API Endpoints
-
-### **POST /solve_quiz**
-Starts solving a quiz.
-
-### **GET /health**
-Returns:
 ```json
-{"status":"ok","message":"Quiz Solver API running safely ✅"}
+{
+  "status": "ok"
+}
 ```
 
-### **GET /favicon.ico**
-Loads your custom icon.
+The agent will run in the background and solve the quiz chain autonomously.
+
+## 🌐 API Endpoints
+
+### `POST /solve`
+
+Receives quiz tasks and triggers the autonomous agent.
+
+**Request Body:**
+
+```json
+{
+  "email": "your.email@example.com",
+  "secret": "your_secret_string",
+  "url": "https://example.com/quiz-123"
+}
+```
+
+**Responses:**
+
+| Status Code | Description                    |
+| ----------- | ------------------------------ |
+| `200`     | Secret verified, agent started |
+| `400`     | Invalid JSON payload           |
+| `403`     | Invalid secret                 |
+
+### `GET /healthz`
+
+Health check endpoint for monitoring.
+
+**Response:**
+
+```json
+{
+  "status": "ok",
+  "uptime_seconds": 3600
+}
+```
+
+## 🛠️ Tools & Capabilities
+
+The agent has access to the following tools:
+
+### 1. **Web Scraper** (`get_rendered_html`)
+
+- Uses Playwright to render JavaScript-heavy pages
+- Waits for network idle before extracting content
+- Returns fully rendered HTML for parsing
+
+### 2. **File Downloader** (`download_file`)
+
+- Downloads files (PDFs, CSVs, images, etc.) from direct URLs
+- Saves files to `LLMFiles/` directory
+- Returns the saved filename
+
+### 3. **Code Executor** (`run_code`)
+
+- Executes arbitrary Python code in an isolated subprocess
+- Returns stdout, stderr, and exit code
+- Useful for data processing, analysis, and visualization
+
+### 4. **POST Request** (`post_request`)
+
+- Sends JSON payloads to submission endpoints
+- Includes automatic error handling and response parsing
+- Prevents resubmission if answer is incorrect and time limit exceeded
+
+### 5. **Dependency Installer** (`add_dependencies`)
+
+- Dynamically installs Python packages as needed
+- Uses `uv add` for fast package resolution
+- Enables the agent to adapt to different task requirements
+
+## 🐳 Docker Deployment
+
+### Build the Image
+
+```bash
+docker build -t llm-analysis-agent .
+```
+
+### Run the Container
+
+```bash
+docker run -p 8080:8080\
+  -e EMAIL="your.email@example.com" \
+  -e SECRET="your_secret_string" \
+  -e GOOGLE_API_KEY="your_api_key" \
+  llm-analysis-agent
+```
+
+### Deploy to HuggingFace Spaces
+
+1. Create a new Space with Docker SDK
+2. Push this repository to your Space
+3. Add secrets in Space settings:
+   - `EMAIL`
+   - `SECRET`
+   - `GOOGLE_API_KEY`
+4. The Space will automatically build and deploy
+
+## 🧠 How It Works
+
+### 1. Request Reception
+
+- FastAPI receives a POST request with quiz URL
+- Validates the secret against environment variables
+- Returns 200 OK and starts the agent in the background
+
+### 2. Agent Initialization
+
+The autonomous agent logic lives inside **solver.py**.
+- LangGraph builds a state machine with two main nodes:
+  - `agent` → the core reasoning LLM node
+  - `tools` → the node that executes tool calls (HTML rendering, OCR, downloads, API POST, code execution)
+- The initial state seeds the system prompt and the quiz URL as the first user message.
+
+### 3. Task Loop
+
+The agent follows this loop:
+
+```
+┌─────────────────────────────────────────┐
+│ 1. LLM analyzes current state           │
+│    - Reads quiz page instructions       │
+│    - Plans tool usage                   │
+└─────────────────┬───────────────────────┘
+                  ▼
+┌─────────────────────────────────────────┐
+│ 2. Tool execution                       │
+│    - Scrapes page / downloads files     │
+│    - Runs analysis code                 │
+│    - Submits answer                     │
+└─────────────────┬───────────────────────┘
+                  ▼
+┌─────────────────────────────────────────┐
+│ 3. Response evaluation                  │
+│    - Checks if answer is correct        │
+│    - Extracts next quiz URL (if exists) │
+└─────────────────┬───────────────────────┘
+                  ▼
+┌─────────────────────────────────────────┐
+│ 4. Decision                             │
+│    - If new URL exists: Loop to step 1  │
+│    - If no URL: Return "END"            │
+└─────────────────────────────────────────┘
+```
+
+### 4. State Management
+
+- All messages (user, assistant, tool) are stored in state
+- The LLM uses full history to make informed decisions
+- Recursion limit set to 200 to handle long quiz chains
+
+### 5. Completion
+
+- Agent returns "END" when no new URL is provided
+- Background task completes
+- Logs indicate success or failure
+
+## 📝 Key Design Decisions
+
+1. **LangGraph over Sequential Execution**: Allows flexible routing and complex decision-making
+2. **Background Processing**: Prevents HTTP timeouts for long-running quiz chains
+3. **Tool Modularity**: Each tool is independent and can be tested/debugged separately
+4. **Rate Limiting**: Prevents API quota exhaustion (9 req/min for Gemini)
+5. **Code Execution**: Dynamically generates and runs Python for complex data tasks
+6. **Playwright for Scraping**: Handles JavaScript-rendered pages that `requests` cannot
+7. **uv for Dependencies**: Fast package resolution and installation
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-# 🛠 Tools & Capabilities
+**Author**: Sanjeev Kumar Gogoi
+**Course**: Tools in Data Science (TDS)
+**Institution**: IIT Madras
 
-Your solver supports:
-
-### **1. JavaScript-rendered scraping**  
-Playwright Chromium → full DOM extraction.
-
-### **2. API loading**  
-JSON, nested structures, auto-normalization.
-
-### **3. File parsing**  
-CSV, Excel, PDF (PyPDF2).
-
-### **4. LLM data reasoning**  
-Summary • QA • Insight • Table analysis • ML-style reasoning.
-
-### **5. Chart generation**  
-Returned as `"data:image/png;base64,..."`.
-
-### **6. Multi-page chaining**  
-Follows `next_url` until quiz ends.
-
----
-
-# 🧠 How It Works
-
-### **1. FastAPI receives request**
-Validates secret & email  
-Starts 3-minute retry window.
-
-### **2. Solver loads data**
-HTML / JS / PDFs / APIs → cleaned → passed to Gemini.
-
-### **3. Gemini analyzes**
-Generates:
-- summary  
-- analysis  
-- QA  
-- slides  
-- chart  
-- next_url  
-
-### **4. Session memory**
-Maintains latest answer for 3 minutes.
-
-### **5. Multi-page solving**
-If `next_url` → continue  
-If none → quiz finished.
-
----
-
-# 📄 License
-
-This project is licensed under the **[MIT License](LICENSE)**.
-
----
-
-# 👤 Author
-
-**Sanjeev Kumar Gogoi**  
-Working Professional • Data Science Project 2
-
-📌 **GitHub Repository:**  
-👉 https://github.com/21f3000340-rgb/llm_quiz_solver  
-
-For issues or suggestions, please open an Issue in the repository.
-
-
-
+For questions or issues, please open an issue on the [GitHub repository](https://github.com/21f3000340-rgb/llm_quiz_solver)
+).
