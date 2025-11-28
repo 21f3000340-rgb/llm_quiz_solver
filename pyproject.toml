@@ -37,3 +37,6 @@ dependencies = [
     "scipy>=1.16.3",
     "haversine>=2.9.0",
 ]
+
+[tool.uv]
+dev-dependencies = []
