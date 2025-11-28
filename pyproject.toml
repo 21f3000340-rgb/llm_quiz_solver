@@ -1,5 +1,5 @@
 [project]
-name = "Quiz Solver API"
+name = "quiz_solver_api"
 version = "0.1.0"
 description = "Autonomous quiz solver using FastAPI + LangGraph + Gemini"
 readme = "README.md"
