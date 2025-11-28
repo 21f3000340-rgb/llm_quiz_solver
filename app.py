@@ -1,35 +1,37 @@
-from fastapi import FastAPI, HTTPException
+# app.py
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import os, re, json, logging
+import uvicorn
+import os
+import time
 
-from solver import solve_quiz_task
+from solver import run_agent
+from shared_store import url_time, BASE64_STORE
 
-
-# ----------------------------------------------------
-# ENV + LOGGING
-# ----------------------------------------------------
+# Load .env variables
 load_dotenv()
-SECRET = os.getenv("USER_SECRET")
-EMAIL = os.getenv("USER_EMAIL")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
+EMAIL = os.getenv("EMAIL")
+SECRET = os.getenv("SECRET")
 
-logger = logging.getLogger("quiz_guard")
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-    logger.addHandler(handler)
+app = FastAPI()
 
-app = FastAPI(
-    title="Quiz Solver API (Gemini Edition)",
-    description="Solves quizzes & analyzes data safely using Gemini.",
-    version="3.0.0"
-)
+# ---------------------------------------------------------
+# FAVICON SUPPORT
+# ---------------------------------------------------------
+# Mount static folder (make sure you have static/favicon.ico)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse("static/favicon.ico")
+
+
+# ---------------------------------------------------------
+# CORS (allow all for testing)
+# ---------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,133 +40,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-class QuizRequest(BaseModel):
-    email: str
-    secret: str
-    url: str
+START_TIME = time.time()
 
 
-# ----------------------------------------------------
-# 3-MIN SESSION MEMORY
-# ----------------------------------------------------
-SESSIONS = {}     # Stores session state per user email only
-
-
-def get_session_key(email: str):
-    return email.lower().strip()
-
-
-# ----------------------------------------------------
-# LEAK DETECTION
-# ----------------------------------------------------
-def detect_leak(text: str, secrets: list[str]):
-    found = []
-    t = text.lower()
-    for s in secrets:
-        if s and re.search(r"\b" + re.escape(s.lower()) + r"\b", t):
-            found.append(s)
-    return found
-
-
-def sanitize_output(data: dict, secrets: list[str]):
-    combined = json.dumps(data)
-    leaked = detect_leak(combined, secrets)
-
-    if leaked:
-        logger.warning(f"🚨 Leak detected: {leaked}")
-
-        for key, val in data.items():
-            if isinstance(val, str):
-                for s in leaked:
-                    val = re.sub(r"\b" + re.escape(s) + r"\b", "[REDACTED]", val, flags=re.IGNORECASE)
-                data[key] = val
-
-        data["safety_action"] = {
-            "action": "redacted",
-            "leaked_tokens": leaked,
-            "note": "Sensitive content removed from output."
-        }
-
-    return data
-
-
-# ----------------------------------------------------
-# ROUTES
-# ----------------------------------------------------
-@app.get("/")
-def home():
+@app.get("/healthz")
+def healthz():
+    """Basic server health check."""
     return {
-        "message": "Welcome to the Quiz Solver API (Gemini Edition)! 🎯",
-        "powered_by": "Google Gemini + FastAPI",
-        "repo": GITHUB_REPO or "Not linked",
-        "example_payload": {
-            "email": EMAIL or "example@example.com",
-            "secret": "your_secret_here",
-            "url": "https://example.com/quiz"
-        },
-        "endpoints": {
-            "solve_quiz": "/solve_quiz (POST)",
-            "health": "/health",
-            "docs": "/docs"
-        }
+        "status": "ok",
+        "uptime_seconds": int(time.time() - START_TIME)
     }
 
 
-@app.post("/solve_quiz")
-async def solve_quiz(payload: QuizRequest):
+@app.post("/solve")
+async def solve(request: Request, background_tasks: BackgroundTasks):
+    """Start solving the quiz from a given URL."""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON received")
 
-    # Secret check
-    if payload.secret != SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden: Invalid secret")
+    url = data.get("url")
+    secret = data.get("secret")
 
-    email_key = get_session_key(payload.email)
-    now = datetime.utcnow()
+    if not url or not secret:
+        raise HTTPException(status_code=400, detail="Missing 'url' or 'secret' in request")
 
-    # Create session if not exists
-    if email_key not in SESSIONS:
-        SESSIONS[email_key] = {
-            "start": now,
-            "last_response": None
-        }
+    if secret != SECRET:
+        raise HTTPException(status_code=403, detail="Invalid secret key")
 
-    session = SESSIONS[email_key]
+    # Reset previous state
+    url_time.clear()
+    BASE64_STORE.clear()
 
-    # 3-minute window check
-    if now - session["start"] > timedelta(minutes=3):
-        return {
-            "status": "timeout",
-            "next_url": session["last_response"].get("next_url") if session["last_response"] else None
-        }
+    # Store context for solver
+    os.environ["url"] = url
+    os.environ["offset"] = "0"
+    url_time[url] = time.time()
 
-    # Solve normally within window
-    secrets_to_check = ["elephant", "tiger", "umbrella"]
+    print(f"Starting solve job for URL: {url}")
 
-    result = await solve_quiz_task(payload.dict())
-    data = result.get("data", {})
+    # Run agent in background
+    background_tasks.add_task(run_agent, url)
 
-    # Update last response
-    session["last_response"] = data
-
-    clean_data = sanitize_output(data, secrets_to_check)
-    return {"status": "success", "data": clean_data}
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "message": "Quiz Solver API running safely ✅"}
-
-
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    file_path = os.path.join(os.path.dirname(__file__), "favicon.ico")
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Favicon not found")
-    return FileResponse(file_path)
+    return JSONResponse(status_code=200, content={"status": "ok"})
 
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    logger.info(f"🚀 Starting server on port {port}")
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("app:app", host="0.0.0.0", port=8080)
