@@ -35,19 +35,21 @@ RUN pip install uv
 # ==============================
 WORKDIR /app
 
-# Copy only dependencies files first (IMPORTANT!)
+# Copy only dependency files FIRST
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies BEFORE copying the rest
+# Install deps with uv
 RUN uv sync --frozen
 
-# ==============================
-# 6) Copy full project AFTER deps installed
-# ==============================
+# Copy code AFTER deps installation
 COPY . .
 
 # ==============================
-# 7) Expose & Run
+# 6) Expose port (Railway uses 8080)
 # ==============================
 EXPOSE 8080
+
+# ==============================
+# 7) Run server
+# ==============================
 CMD ["uv", "run", "app.py"]
