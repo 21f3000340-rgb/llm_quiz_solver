@@ -15,16 +15,11 @@ openpyxl
 pdfplumber
 nltk
 scikit-learn
-xgboost
-lightgbm
-geopandas
-shapely
 networkx
 
-# Visualization & slides
+# Visualization & file handling
 matplotlib
 seaborn
-plotly
 altair
 python-pptx
 pillow
