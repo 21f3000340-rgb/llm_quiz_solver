@@ -21,7 +21,7 @@ def extract_base(url: str):
         return f"{parsed.scheme}://{parsed.netloc}"
     except:
         return ""
-        
+
 
 # LangGraph
 from langgraph.graph import StateGraph, START, END
@@ -33,17 +33,15 @@ from langchain.chat_models import init_chat_model
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.messages import trim_messages, HumanMessage
 
-# Local Tools
-from tools import (
-    run_code,
-    get_rendered_html,
-    download_file,
-    post_request,
-    add_dependencies,
-    ocr_image_tool,
-    transcribe_audio,
-    encode_image_to_base64,
-)
+# Local Tools  (FIXED IMPORTS HERE)
+from run_code import run_code
+from web_scraper import get_rendered_html
+from download_file import download_file
+from send_request import post_request
+from add_dependencies import add_dependencies
+from image_content_extracter import ocr_image_tool
+from transcribe_audio import transcribe_audio
+from encode_image_to_base64 import encode_image_to_base64
 
 # Shared store
 from shared_store import url_time
@@ -57,7 +55,6 @@ MAX_TOKENS = 60000
 JSON_FIX_LIMIT = 4
 TIMEOUT_LIMIT = 180
 
-
 TOOLS = [
     run_code,
     get_rendered_html,
@@ -68,7 +65,6 @@ TOOLS = [
     transcribe_audio,
     encode_image_to_base64,
 ]
-
 
 rate_limiter = InMemoryRateLimiter(
     requests_per_second=4 / 60,
