@@ -1,6 +1,6 @@
 # Core web & environment
-fastapi
-uvicorn
+fastapi==0.121.3
+uvicorn==0.38.0
 python-dotenv
 requests
 beautifulsoup4
@@ -8,32 +8,35 @@ lxml
 fake-useragent
 playwright
 
-# LangGraph + LangChain
-langgraph
-langchain
-langchain-community
-langchain-google-genai
+# LangChain + LangGraph (PINNED VERSIONS — required)
+langchain==0.2.11
+langchain-core==0.2.23
+langchain-community==0.2.7
+langchain-google-genai==1.0.4
+langgraph==1.0.3
+
+# Google AI (new official package)
+google-generativeai
 
 # Data processing & analysis
 pandas
 numpy
-openpyxl
-pdfplumber
-nltk
 scikit-learn
+scipy
 networkx
+duckdb
+haversine
 
-# OCR & Audio
+# OCR + Files
+pillow
 pytesseract
+pypdf
+ffmpeg-python
+
+# Audio
 SpeechRecognition
 pydub
 
-# Visualization & file handling
-matplotlib
-seaborn
-altair
-python-pptx
-pillow
-
-# AI / Gemini
-google-generativeai
+# String matching utilities
+fuzzywuzzy
+python-levenshtein
