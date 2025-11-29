@@ -1,53 +1,39 @@
-# ==============================
-# 1) Base Image
-# ==============================
+# Use slim Python
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# ==============================
-# 2) System Dependencies
-# ==============================
-RUN apt-get update && apt-get install -y \
+# Install system deps (keep small)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl git unzip \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libxkbcommon0 libgtk-3-0 libgbm1 libasound2 \
     libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
     libpango-1.0-0 libcairo2 \
     tesseract-ocr \
+    ffmpeg \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# ==============================
-# 3) Install Playwright
-# ==============================
-RUN pip install playwright
-RUN playwright install --with-deps chromium
-
-# ==============================
-# 4) Install uv
-# ==============================
-RUN pip install uv
-
-# ==============================
-# 5) Prepare App Folder
-# ==============================
 WORKDIR /app
 
-# Copy only pyproject + uv.lock FIRST
-COPY pyproject.toml uv.lock ./
+# Copy requirements first for caching (create requirements.txt if you don't have one)
+COPY requirements.txt ./
 
-# Install deps
-RUN uv sync || uv sync
+# Install python deps
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install -r requirements.txt
 
-# ==============================
-# 6) Copy full project
-# ==============================
+# Install Playwright and browsers
+RUN pip install playwright \
+    && playwright install --with-deps chromium
+
+# Copy the rest of the app
 COPY . .
 
-# ==============================
-# 7) Expose & Run
-# ==============================
+# Railway exposes PORT env var. Use 0.0.0.0 host.
 EXPOSE 8080
-CMD ["uv", "run", "app.py"]
+
+# Use uvicorn to run FastAPI app object in app.py (app:app)
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
