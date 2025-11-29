@@ -23,6 +23,9 @@ nltk
 scikit-learn
 networkx
 
+# OCR (Required)
+pytesseract
+
 # Visualization & file handling
 matplotlib
 seaborn
