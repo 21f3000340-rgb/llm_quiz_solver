@@ -11,7 +11,7 @@ playwright
 # LangChain + LangGraph (COMPATIBLE VERSIONS)
 langchain==0.1.20
 langchain-core==0.1.52
-langchain-community==0.0.34
+langchain-community==0.0.38
 langchain-google-genai==0.0.11
 langgraph==0.0.58
 
@@ -27,7 +27,7 @@ networkx
 duckdb
 haversine
 
-# OCR & File handling
+# OCR & Files
 pillow
 pytesseract
 pypdf
