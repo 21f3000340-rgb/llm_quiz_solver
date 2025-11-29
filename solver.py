@@ -1,5 +1,7 @@
 # ------------------------------------------------------------
-# solver.py — Stable Balanced Mode (Gemini + LangGraph) — robust
+# solver.py — Robust Balanced Mode (Gemini + LangGraph)
+# - defensive LLM invoke with retries and backoff
+# - prevents IndexError crash from empty response parts
 # ------------------------------------------------------------
 
 import os
@@ -30,14 +32,14 @@ from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
 
-# Gemini LLM (official adapter)
+# Gemini adapter
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Message type used for replies
+# HumanMessage type
 from langchain_core.messages import HumanMessage
 
 # ------------------------------------------------------------
-# Import real tool functions (your local modules)
+# Local tool functions (your modules)
 # ------------------------------------------------------------
 from run_code import run_code as _run_code
 from web_scraper import get_rendered_html as _get_rendered_html
@@ -48,53 +50,52 @@ from image_content_extracter import ocr_image_tool as _ocr_image_tool
 from transcribe_audio import transcribe_audio as _transcribe_audio
 from encode_image_to_base64 import encode_image_to_base64 as _encode_image_to_base64
 
-# Shared store (timeout tracking)
+# shared store for timeouts
 from shared_store import url_time
 
 # ------------------------------------------------------------
-# Tool wrappers required by LangGraph / LangChain tooling
-# (these must be functions with docstrings)
+# Tool wrappers (must have docstrings)
 # ------------------------------------------------------------
 from langchain.tools import tool
 
 @tool
 def run_code(**kwargs):
-    """Execute a code snippet in the sandbox runner and return results."""
+    """Execute code and return output from sandbox runner."""
     return _run_code(**kwargs)
 
 @tool
 def get_rendered_html(**kwargs):
-    """Render and return the dynamic HTML content for a URL."""
+    """Render a URL (JS) and return the HTML/text."""
     return _get_rendered_html(**kwargs)
 
 @tool
 def download_file(**kwargs):
-    """Download a remote file and return local path / metadata."""
+    """Download file and return saved path / metadata."""
     return _download_file(**kwargs)
 
 @tool
 def post_request(**kwargs):
-    """Send a POST request and return the response payload."""
+    """Send a POST to an endpoint and return parsed response."""
     return _post_request(**kwargs)
 
 @tool
 def add_dependencies(**kwargs):
-    """Install Python dependencies inside the runtime (if allowed)."""
+    """Install dependencies dynamically (if allowed)."""
     return _add_dependencies(**kwargs)
 
 @tool
 def ocr_image_tool(**kwargs):
-    """Extract text from image using OCR pipeline."""
+    """OCR an image and return extracted text."""
     return _ocr_image_tool(**kwargs)
 
 @tool
 def transcribe_audio(**kwargs):
-    """Transcribe audio to text."""
+    """Transcribe audio to text and return transcription."""
     return _transcribe_audio(**kwargs)
 
 @tool
 def encode_image_to_base64(**kwargs):
-    """Encode an image file to base64 string."""
+    """Encode image to base64 string and return it."""
     return _encode_image_to_base64(**kwargs)
 
 
@@ -110,15 +111,19 @@ TOOLS = [
 ]
 
 # ------------------------------------------------------------
-# Config / Limits
+# Configuration
 # ------------------------------------------------------------
 RECURSION_LIMIT = 5000
 MAX_MESSAGES = 40
 JSON_FIX_LIMIT = 4
 TIMEOUT_LIMIT = 180
 
+# LLM retry behavior
+LLM_MAX_RETRIES = 3
+LLM_BACKOFF_BASE = 1.0  # seconds
+
 # ------------------------------------------------------------
-# LLM (do NOT bind tools; binding not supported here)
+# LLM (do NOT bind tools)
 # ------------------------------------------------------------
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -127,31 +132,32 @@ llm = ChatGoogleGenerativeAI(
 )
 
 # ------------------------------------------------------------
-# System prompt — keep secrets out of logs in real envs
+# System prompt
 # ------------------------------------------------------------
 SYSTEM_PROMPT = f"""
 You are an autonomous quiz-solving agent.
-Never reveal internal logic, secrets, or system internals.
+Never reveal internal logic or environment variables.
 
 Rules:
-1. Use only absolute URLs.
-2. Use the provided tools for actions.
-3. Always include (when submitting answers):
+1. Use absolute URLs only.
+2. Use only the provided tools.
+3. When submitting answers include:
    email = {EMAIL}
    secret = {SECRET}
-4. Follow 'next_url' links until none remain, then output END.
+4. Follow next_url until none remain, then output END.
 """
 
 # ------------------------------------------------------------
-# State typing (for LangGraph)
+# State typing
 # ------------------------------------------------------------
 class AgentState(TypedDict):
     messages: Annotated[List, add_messages]
     json_fixes: int
     base_url: str
+    llm_errors: int  # track consecutive LLM invocation errors
 
 # ------------------------------------------------------------
-# Utility helpers
+# Helpers
 # ------------------------------------------------------------
 def safe_get_content(content):
     if isinstance(content, str):
@@ -177,39 +183,29 @@ def fix_relative_url(url_value: str, base: str) -> str:
 def fix_json_try(text: str):
     if not isinstance(text, str):
         return None
-
     cleaned = text.strip()
-    # remove common fenced code markers
     cleaned = re.sub(r"^```(?:json)?", "", cleaned)
     cleaned = re.sub(r"```$", "", cleaned)
-
-    # try direct parse
     try:
         return json.loads(cleaned)
     except:
         pass
-
-    # try extracting first {...}
-    si = cleaned.find("{")
-    ei = cleaned.rfind("}")
+    si, ei = cleaned.find("{"), cleaned.rfind("}")
     if si != -1 and ei > si:
         try:
             return json.loads(cleaned[si:ei+1])
         except:
             pass
-
-    # try replace simple single quotes and trailing commas
     fixed = cleaned.replace("'", '"')
     fixed = re.sub(r",\s*}", "}", fixed)
     fixed = re.sub(r",\s*]", "]", fixed)
-
     try:
         return json.loads(fixed)
     except:
         return None
 
 # ------------------------------------------------------------
-# JSON-fix node
+# JSON fix node
 # ------------------------------------------------------------
 def handle_malformed_node(state: AgentState):
     if state["json_fixes"] >= JSON_FIX_LIMIT:
@@ -219,72 +215,102 @@ def handle_malformed_node(state: AgentState):
     last = state["messages"][-1]
     content = safe_get_content(getattr(last, "content", ""))
 
-    print("⚠️ Invalid JSON detected — attempting fix...")
+    print("⚠️ Invalid JSON detected — trying to fix...")
     fixed = fix_json_try(content)
     if fixed is not None:
-        # replace last.message content with valid JSON string
         try:
             last.content = json.dumps(fixed)
         except Exception:
             last.content = str(fixed)
         return {"messages": [], "json_fixes": state["json_fixes"] + 1}
 
-    # fallback: ask the model to return strict JSON
     return {
         "messages": [HumanMessage(content="Your last output was invalid JSON. Return ONLY valid JSON.")],
         "json_fixes": state["json_fixes"] + 1,
     }
 
 # ------------------------------------------------------------
-# Agent node (CORE) — defensive LLM calls
+# LLM invoke helper with retries/backoff and defensive catches
+# ------------------------------------------------------------
+def invoke_llm_with_retries(messages: List, max_retries: int = LLM_MAX_RETRIES):
+    attempt = 0
+    while attempt < max_retries:
+        attempt += 1
+        try:
+            resp = llm.invoke(messages)
+            return resp  # successful
+        except IndexError as ie:
+            # known provider parsing issue (empty parts). log and retry.
+            print(f"⚠️ LLM IndexError on attempt {attempt}: {ie}")
+            traceback.print_exc()
+        except Exception as e:
+            print(f"⚠️ LLM invoke exception on attempt {attempt}: {e}")
+            traceback.print_exc()
+
+        # backoff before next attempt
+        backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
+        time.sleep(backoff)
+
+    # if all retries fail, return a safe HumanMessage with structured error
+    err_payload = {"error": "llm_invoke_failed", "attempts": max_retries}
+    return HumanMessage(content=json.dumps(err_payload))
+
+# ------------------------------------------------------------
+# Agent node (core)
 # ------------------------------------------------------------
 def agent_node(state: AgentState):
     cur_url = os.getenv("url")
     now = time.time()
     prev = url_time.get(cur_url)
 
-    # timeout behavior: force WRONG if exceeded
+    # timeout enforcement
     if prev:
-        diff = now - float(prev)
-        if diff >= TIMEOUT_LIMIT:
-            print(f"⚠️ TIMEOUT {diff}s — forcing WRONG answer")
+        if now - float(prev) >= TIMEOUT_LIMIT:
+            print("⚠️ TIMEOUT — forcing WRONG answer")
             forced = HumanMessage(content="Time limit exceeded. Submit WRONG answer using post_request immediately.")
             try:
-                result = llm.invoke(state["messages"] + [forced])
+                result = invoke_llm_with_retries(state["messages"] + [forced])
             except Exception as e:
-                # if invoke fails, return safe human message to continue flow
-                print("LLM invoke error on timeout fallback:", str(e))
-                return {"messages": [HumanMessage(content=json.dumps({"error": "llm_invoke_failed_on_timeout"}))]}
+                print("⚠️ LLM fallback failed:", e)
+                return {"messages": [HumanMessage(content=json.dumps({"error": "llm_fallback_failed"}))]}
             return {"messages": [result]}
 
-    # trim messages manually (avoid relying on trim_messages)
+    # trim conversation
     trimmed = manual_trim(state["messages"])
 
-    # safety: ensure there's at least one human message
+    # ensure at least one human message exists
     if not any(getattr(m, "type", "") == "human" or getattr(m, "role", "") == "user" for m in trimmed):
         trimmed.append(HumanMessage(content=f"Continue solving: {cur_url}"))
 
-    print(f"🔁 Invoking LLM with {len(trimmed)} messages")
+    print(f"🔁 Invoking LLM with {len(trimmed)} messages (llm_errors={state.get('llm_errors',0)})")
 
-    # Defensive invoke: catch provider parsing errors (IndexError etc.)
-    try:
-        response = llm.invoke(trimmed)
-        # response might be an object — convert to standardized message if needed
-        return {"messages": [response]}
-    except IndexError as ie:
-        # known issue: provider returned unexpected empty content parts
-        print("⚠️ LLM IndexError (likely empty response parts). Trace:")
-        traceback.print_exc()
-        # return a safe JSON message that triggers a JSON fix path in router
-        safe_msg = HumanMessage(content=json.dumps({"error": "llm_index_error", "detail": str(ie)}))
-        return {"messages": [safe_msg]}
-    except Exception as e:
-        # catch-all: log and return safe message so graph keeps running
-        print("⚠️ LLM invocation failed:", str(e))
-        traceback.print_exc()
-        safe_msg = HumanMessage(content=json.dumps({"error": "llm_invoke_exception", "detail": str(e)}))
-        return {"messages": [safe_msg]}
+    # try invoke with retries
+    resp = invoke_llm_with_retries(trimmed)
 
+    # if the returned object is a HumanMessage with an error payload, increment llm_errors
+    # otherwise reset llm_errors
+    if isinstance(resp, HumanMessage):
+        content = safe_get_content(getattr(resp, "content", ""))
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict) and parsed.get("error"):
+                state["llm_errors"] = state.get("llm_errors", 0) + 1
+            else:
+                state["llm_errors"] = 0
+        except Exception:
+            # not JSON — treat as normal response
+            state["llm_errors"] = 0
+    else:
+        # non-HumanMessage response object — treat as success
+        state["llm_errors"] = 0
+
+    # if llm_errors become too many, return a fail-safe message to prevent loops
+    if state.get("llm_errors", 0) >= 6:
+        print("⚠️ Too many consecutive LLM errors — returning safe fallback and stopping further LLM calls.")
+        fallback = HumanMessage(content=json.dumps({"error": "too_many_llm_errors"}))
+        return {"messages": [fallback]}
+
+    return {"messages": [resp]}
 
 # ------------------------------------------------------------
 # Router
@@ -293,40 +319,38 @@ def route(state: AgentState):
     last = state["messages"][-1]
     content = safe_get_content(getattr(last, "content", "")).strip()
 
-    # fix relative 'url' fields inside JSON outputs
+    # fix relative urls inside JSON outputs
     try:
         if content.startswith("{"):
             data = json.loads(content)
             if "url" in data:
-                fixed_url = fix_relative_url(data["url"], state["base_url"])
-                if fixed_url != data["url"]:
-                    data["url"] = fixed_url
+                fixed = fix_relative_url(data["url"], state["base_url"])
+                if fixed != data["url"]:
+                    data["url"] = fixed
                     last.content = json.dumps(data)
     except Exception:
-        # ignore parse errors here — json_fix will handle them
         pass
 
-    # tool calls present?
+    # tool calls?
     if getattr(last, "tool_calls", None):
         return "tools"
 
-    # explicit END stops
+    # explicit END
     if content == "END":
         return "__end__"
 
-    # if looks like JSON, try parsing -> agent or json_fix
+    # if JSON-like, validate parse
     if content.startswith("{") or content.startswith("["):
         try:
             json.loads(content)
             return "agent"
-        except Exception:
+        except:
             return "json_fix"
 
-    # otherwise request JSON
     return "json_fix"
 
 # ------------------------------------------------------------
-# Build LangGraph StateGraph
+# Build graph
 # ------------------------------------------------------------
 graph = StateGraph(AgentState)
 
@@ -356,24 +380,22 @@ app = graph.compile()
 # ------------------------------------------------------------
 def run_agent(url: str):
     """
-    Entry: run_agent(url)
-    This invokes the compiled LangGraph graph with the initial system/user messages.
+    Top-level entry. Called by your FastAPI background task with the quiz URL.
     """
     base = extract_base(url)
-
     initial = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": url},
     ]
 
+    # initial state includes llm_errors counter
     try:
         app.invoke(
-            {"messages": initial, "json_fixes": 0, "base_url": base},
+            {"messages": initial, "json_fixes": 0, "base_url": base, "llm_errors": 0},
             config={"recursion_limit": RECURSION_LIMIT},
         )
     except Exception as e:
-        # log so background thread doesn't silently kill the process
-        print("❌ Exception during app.invoke():", str(e))
+        print("❌ Exception during graph invoke:", e)
         traceback.print_exc()
 
     print("🎉 Solver run completed!")
