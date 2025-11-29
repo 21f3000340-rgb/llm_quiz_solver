@@ -8,6 +8,12 @@ lxml
 fake-useragent
 playwright
 
+# LangGraph + LangChain (required)
+langgraph
+langchain
+langchain-community
+langchain-google-genai
+
 # Data processing & analysis
 pandas
 numpy
