@@ -8,7 +8,7 @@ lxml
 fake-useragent
 playwright
 
-# LangGraph + LangChain (required)
+# LangGraph + LangChain
 langgraph
 langchain
 langchain-community
@@ -23,8 +23,10 @@ nltk
 scikit-learn
 networkx
 
-# OCR (Required)
+# OCR & Audio
 pytesseract
+SpeechRecognition
+pydub
 
 # Visualization & file handling
 matplotlib
