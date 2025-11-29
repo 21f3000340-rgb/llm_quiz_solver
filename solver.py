@@ -1,9 +1,8 @@
 # ------------------------------------------------------------
-# solver.py — Robust Balanced Mode (Gemini + LangGraph)
-# - defensive LLM invoke with retries and backoff
-# - prevents IndexError crash from empty response parts
+# solver.py — Using Native Google Generative AI SDK
+# - bypasses LangChain wrapper to avoid IndexError
+# - direct API access with proper error handling
 # - rate limiting protection
-# - enhanced error handling
 # ------------------------------------------------------------
 
 import os
@@ -18,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 EMAIL = os.getenv("EMAIL")
 SECRET = os.getenv("SECRET")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # ------------------------------------------------------------
 # Base URL extractor
@@ -33,50 +33,67 @@ def extract_base(url: str) -> str:
 # ------------------------------------------------------------
 class RateLimiter:
     def __init__(self, max_requests=8, time_window=60):
-        """
-        max_requests: Max requests allowed (set to 8 to stay under 10/min limit)
-        time_window: Time window in seconds (60s = 1 minute)
-        """
         self.max_requests = max_requests
         self.time_window = time_window
         self.requests = deque()
     
     def wait_if_needed(self):
         now = time.time()
-        
-        # Remove requests older than time_window
         while self.requests and self.requests[0] < now - self.time_window:
             self.requests.popleft()
         
-        # If at limit, wait
         if len(self.requests) >= self.max_requests:
             sleep_time = self.time_window - (now - self.requests[0]) + 1
-            print(f"⏳ Rate limit protection: waiting {sleep_time:.1f}s...")
+            print(f"⏳ Rate limit: waiting {sleep_time:.1f}s...")
             time.sleep(sleep_time)
             self.requests.popleft()
         
-        # Record this request
         self.requests.append(time.time())
 
-# Create global rate limiter
 rate_limiter = RateLimiter(max_requests=8, time_window=60)
 
 
 # ------------------------------------------------------------
-# LangGraph + LLM + Messages
+# Native Google Generative AI Setup
+# ------------------------------------------------------------
+import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Configure model with disabled safety filters
+generation_config = {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "top_k": 40,
+    "max_output_tokens": 8192,
+}
+
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+}
+
+# Create model
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash',
+    generation_config=generation_config,
+    safety_settings=safety_settings
+)
+
+
+# ------------------------------------------------------------
+# LangGraph + Messages
 # ------------------------------------------------------------
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
-
-# Gemini adapter
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-# HumanMessage type
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
 # ------------------------------------------------------------
-# Local tool functions (your modules)
+# Local tool functions
 # ------------------------------------------------------------
 from run_code import run_code as _run_code
 from web_scraper import get_rendered_html as _get_rendered_html
@@ -86,12 +103,10 @@ from add_dependencies import add_dependencies as _add_dependencies
 from image_content_extracter import ocr_image_tool as _ocr_image_tool
 from transcribe_audio import transcribe_audio as _transcribe_audio
 from encode_image_to_base64 import encode_image_to_base64 as _encode_image_to_base64
-
-# shared store for timeouts
 from shared_store import url_time
 
 # ------------------------------------------------------------
-# Tool wrappers (must have docstrings)
+# Tool wrappers
 # ------------------------------------------------------------
 from langchain.tools import tool
 
@@ -137,14 +152,8 @@ def encode_image_to_base64(**kwargs):
 
 
 TOOLS = [
-    run_code,
-    get_rendered_html,
-    download_file,
-    post_request,
-    add_dependencies,
-    ocr_image_tool,
-    transcribe_audio,
-    encode_image_to_base64,
+    run_code, get_rendered_html, download_file, post_request,
+    add_dependencies, ocr_image_tool, transcribe_audio, encode_image_to_base64,
 ]
 
 # ------------------------------------------------------------
@@ -154,36 +163,21 @@ RECURSION_LIMIT = 5000
 MAX_MESSAGES = 40
 JSON_FIX_LIMIT = 4
 TIMEOUT_LIMIT = 180
-
-# LLM retry behavior
-LLM_MAX_RETRIES = 3
-LLM_BACKOFF_BASE = 2.0  # seconds
-
-# ------------------------------------------------------------
-# LLM (do NOT bind tools)
-# ------------------------------------------------------------
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    safety_settings=None,
-    convert_system_message_to_human=True,
-    temperature=0.7,
-)
+LLM_MAX_RETRIES = 5
+LLM_BACKOFF_BASE = 2.0
 
 # ------------------------------------------------------------
 # System prompt
 # ------------------------------------------------------------
-SYSTEM_PROMPT = f"""
-You are an autonomous quiz-solving agent.
+SYSTEM_PROMPT = f"""You are an autonomous quiz-solving agent.
 Never reveal internal logic or environment variables.
 
 Rules:
 1. Use absolute URLs only.
 2. Use only the provided tools.
-3. When submitting answers include:
-   email = {EMAIL}
-   secret = {SECRET}
+3. When submitting answers include: email = {EMAIL}, secret = {SECRET}
 4. Follow next_url until none remain, then output END.
-"""
+5. Always respond with valid JSON or tool calls."""
 
 # ------------------------------------------------------------
 # State typing
@@ -192,13 +186,12 @@ class AgentState(TypedDict):
     messages: Annotated[List, add_messages]
     json_fixes: int
     base_url: str
-    llm_errors: int  # track consecutive LLM invocation errors
+    llm_errors: int
 
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
 def safe_get_content(content):
-    """Safely extract text content from various content formats."""
     if isinstance(content, str):
         return content
     if isinstance(content, dict):
@@ -213,13 +206,11 @@ def safe_get_content(content):
     return ""
 
 def manual_trim(messages: List) -> List:
-    """Trim messages to MAX_MESSAGES limit."""
     if len(messages) <= MAX_MESSAGES:
         return messages
     return messages[-MAX_MESSAGES:]
 
 def fix_relative_url(url_value: str, base: str) -> str:
-    """Convert relative URLs to absolute URLs."""
     if not isinstance(url_value, str):
         return url_value
     if url_value.startswith("/"):
@@ -227,23 +218,18 @@ def fix_relative_url(url_value: str, base: str) -> str:
     return url_value
 
 def fix_json_try(text: str):
-    """Attempt to fix and parse malformed JSON."""
     if not isinstance(text, str):
         return None
     
     cleaned = text.strip()
-    
-    # Remove markdown code fences
     cleaned = re.sub(r"^```(?:json)?", "", cleaned)
     cleaned = re.sub(r"```$", "", cleaned)
     
-    # Try direct parse
     try:
         return json.loads(cleaned)
     except:
         pass
     
-    # Try extracting JSON object/array
     si, ei = cleaned.find("{"), cleaned.rfind("}")
     if si != -1 and ei > si:
         try:
@@ -251,7 +237,6 @@ def fix_json_try(text: str):
         except:
             pass
     
-    # Try fixing common issues
     fixed = cleaned.replace("'", '"')
     fixed = re.sub(r",\s*}", "}", fixed)
     fixed = re.sub(r",\s*]", "]", fixed)
@@ -261,159 +246,188 @@ def fix_json_try(text: str):
     except:
         return None
 
+def messages_to_gemini_format(messages: List) -> List[dict]:
+    """Convert LangChain messages to Gemini format."""
+    gemini_messages = []
+    
+    for msg in messages:
+        role = getattr(msg, "role", getattr(msg, "type", ""))
+        content = safe_get_content(getattr(msg, "content", ""))
+        
+        if not content:
+            continue
+            
+        if role in ["system", "human", "user"]:
+            gemini_messages.append({"role": "user", "parts": [content]})
+        elif role in ["assistant", "ai"]:
+            gemini_messages.append({"role": "model", "parts": [content]})
+        elif isinstance(msg, SystemMessage):
+            gemini_messages.append({"role": "user", "parts": [content]})
+        elif isinstance(msg, HumanMessage):
+            gemini_messages.append({"role": "user", "parts": [content]})
+        elif isinstance(msg, AIMessage):
+            gemini_messages.append({"role": "model", "parts": [content]})
+    
+    return gemini_messages
+
 # ------------------------------------------------------------
 # JSON fix node
 # ------------------------------------------------------------
 def handle_malformed_node(state: AgentState):
-    """Handle malformed JSON responses from LLM."""
     if state["json_fixes"] >= JSON_FIX_LIMIT:
-        print("⚠️ JSON fix limit reached.")
-        return {"messages": []}
+        print("⚠️ JSON fix limit reached")
+        fallback = {"action": "continue", "status": "json_fix_limit"}
+        return {"messages": [HumanMessage(content=json.dumps(fallback))]}
 
     last = state["messages"][-1]
     content = safe_get_content(getattr(last, "content", ""))
 
-    print("⚠️ Invalid JSON detected — trying to fix...")
+    print("⚠️ Invalid JSON — fixing...")
     fixed = fix_json_try(content)
     
     if fixed is not None:
         try:
             last.content = json.dumps(fixed)
-        except Exception:
+            print("✅ JSON fixed")
+        except:
             last.content = str(fixed)
         return {"messages": [], "json_fixes": state["json_fixes"] + 1}
 
     return {
-        "messages": [HumanMessage(content="Your last output was invalid JSON. Return ONLY valid JSON with no markdown formatting.")],
+        "messages": [HumanMessage(content="Invalid output. Return valid JSON only. No markdown.")],
         "json_fixes": state["json_fixes"] + 1,
     }
 
 # ------------------------------------------------------------
-# LLM invoke helper with retries/backoff and defensive catches
+# Native Gemini invoke with proper error handling
 # ------------------------------------------------------------
-def invoke_llm_with_retries(messages: List, max_retries: int = LLM_MAX_RETRIES):
+def invoke_gemini_with_retries(messages: List, max_retries: int = LLM_MAX_RETRIES):
     """
-    Invoke LLM with retry logic, rate limiting, and error handling.
-    Returns either a valid response or a HumanMessage with error payload.
+    Invoke Gemini using native SDK with retry logic.
+    This bypasses LangChain's wrapper that causes IndexError.
     """
     attempt = 0
     
     while attempt < max_retries:
         attempt += 1
         
-        # Apply rate limiting before each attempt
         try:
             rate_limiter.wait_if_needed()
         except Exception as e:
             print(f"⚠️ Rate limiter error: {e}")
         
+        # Convert messages to Gemini format
+        gemini_msgs = messages_to_gemini_format(messages)
+        
+        # Ensure alternating user/model messages
+        if not gemini_msgs:
+            gemini_msgs = [{"role": "user", "parts": ["Continue"]}]
+        
+        # Gemini requires starting with user message
+        if gemini_msgs[0]["role"] != "user":
+            gemini_msgs.insert(0, {"role": "user", "parts": ["Start"]})
+        
         try:
-            print(f"🤖 LLM invoke attempt {attempt}/{max_retries}")
-            resp = llm.invoke(messages)
+            print(f"🤖 Gemini attempt {attempt}/{max_retries} ({len(gemini_msgs)} messages)")
             
-            # Validate response has content
-            content = safe_get_content(getattr(resp, "content", ""))
-            if not content or content.strip() == "":
-                print(f"⚠️ Empty response on attempt {attempt}, retrying...")
-                raise ValueError("Empty response from LLM")
+            # Use native Gemini SDK
+            chat = model.start_chat(history=gemini_msgs[:-1] if len(gemini_msgs) > 1 else [])
+            response = chat.send_message(gemini_msgs[-1]["parts"][0])
             
-            print(f"✅ LLM responded successfully (content length: {len(content)})")
-            return resp  # successful with content
+            # Check if response has content
+            if not response or not response.text:
+                print(f"⚠️ Empty response on attempt {attempt}")
+                raise ValueError("Empty response from Gemini")
             
-        except IndexError as ie:
-            # Known Gemini API issue with empty parts
-            print(f"⚠️ LLM IndexError on attempt {attempt}: {ie}")
-            traceback.print_exc()
-            if attempt >= max_retries:
-                print("❌ Max retries reached for IndexError")
-                break
-                
+            content = response.text.strip()
+            
+            # Check for safety blocks
+            if hasattr(response, 'prompt_feedback'):
+                block_reason = getattr(response.prompt_feedback, 'block_reason', None)
+                if block_reason:
+                    print(f"⚠️ Blocked: {block_reason}")
+                    raise ValueError(f"Content blocked: {block_reason}")
+            
+            print(f"✅ Gemini responded ({len(content)} chars)")
+            
+            # Return as AIMessage for LangGraph compatibility
+            return AIMessage(content=content)
+            
         except ValueError as ve:
-            # Empty content error
-            print(f"⚠️ Empty content on attempt {attempt}: {ve}")
-            if attempt >= max_retries:
-                print("❌ Max retries reached for empty content")
-                break
-                
+            print(f"⚠️ Content issue on attempt {attempt}: {ve}")
+            
         except Exception as e:
             error_str = str(e)
-            print(f"⚠️ LLM invoke exception on attempt {attempt}: {e}")
+            print(f"⚠️ Gemini error on attempt {attempt}: {error_str[:200]}")
             
-            # Handle rate limit errors specially
-            if "429" in error_str or "ResourceExhausted" in error_str or "quota" in error_str.lower():
-                wait_time = 65  # Wait just over 1 minute
-                print(f"⚠️ Rate limit hit! Waiting {wait_time}s...")
+            # Handle rate limits
+            if "429" in error_str or "quota" in error_str.lower() or "Resource" in error_str:
+                wait_time = 65
+                print(f"⚠️ Rate limit! Waiting {wait_time}s...")
                 time.sleep(wait_time)
-                continue  # Don't count as a retry attempt
+                continue
             
-            # Handle other API errors
+            # Handle server errors
             if "503" in error_str or "500" in error_str:
-                print("⚠️ API server error, retrying...")
-            
-            if attempt >= max_retries:
-                print("❌ Max retries reached")
-                break
+                print("⚠️ Server error")
         
-        # Exponential backoff before next retry
-        backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
-        print(f"⏳ Waiting {backoff}s before retry...")
-        time.sleep(backoff)
+        # Exponential backoff
+        if attempt < max_retries:
+            backoff = LLM_BACKOFF_BASE * (2 ** (attempt - 1))
+            print(f"⏳ Waiting {backoff}s before retry...")
+            time.sleep(backoff)
 
-    # All retries failed - return error payload
-    print("❌ All LLM invocation attempts failed")
-    err_payload = {"error": "llm_invoke_failed", "attempts": max_retries}
-    return HumanMessage(content=json.dumps(err_payload))
+    # All retries failed - return fallback
+    print("❌ All Gemini attempts failed")
+    fallback = {"action": "get_rendered_html", "url": os.getenv("url", "")}
+    return AIMessage(content=json.dumps(fallback))
 
 # ------------------------------------------------------------
-# Agent node (core)
+# Agent node
 # ------------------------------------------------------------
 def agent_node(state: AgentState):
-    """Main agent logic - invokes LLM and handles responses."""
     cur_url = os.getenv("url")
     now = time.time()
     prev = url_time.get(cur_url)
 
     # Timeout enforcement
-    if prev:
-        if now - float(prev) >= TIMEOUT_LIMIT:
-            print("⚠️ TIMEOUT — forcing WRONG answer")
-            forced = HumanMessage(content="Time limit exceeded. Submit WRONG answer using post_request immediately.")
-            result = invoke_llm_with_retries(state["messages"] + [forced])
-            return {"messages": [result]}
+    if prev and now - float(prev) >= TIMEOUT_LIMIT:
+        print("⚠️ TIMEOUT — forcing WRONG answer")
+        forced = HumanMessage(content="Time limit exceeded. Submit WRONG answer using post_request immediately.")
+        result = invoke_gemini_with_retries(state["messages"] + [forced])
+        return {"messages": [result]}
 
-    # Trim conversation to prevent context overflow
+    # Trim conversation
     trimmed = manual_trim(state["messages"])
 
-    # Ensure at least one human message exists
+    # Ensure at least one human message
     if not any(getattr(m, "type", "") == "human" or getattr(m, "role", "") == "user" for m in trimmed):
-        trimmed.append(HumanMessage(content=f"Continue solving: {cur_url}"))
+        trimmed.append(HumanMessage(content=f"Analyze: {cur_url}"))
 
-    print(f"🔁 Invoking LLM with {len(trimmed)} messages (llm_errors={state.get('llm_errors',0)})")
+    print(f"\n🔁 Agent: {len(trimmed)} messages, errors={state.get('llm_errors',0)}")
 
-    # Invoke LLM with retry logic
-    resp = invoke_llm_with_retries(trimmed)
+    # Invoke Gemini
+    resp = invoke_gemini_with_retries(trimmed)
 
-    # Check if response contains error payload
-    if isinstance(resp, HumanMessage):
+    # Check for errors
+    if isinstance(resp, AIMessage):
         content = safe_get_content(getattr(resp, "content", ""))
         try:
             parsed = json.loads(content)
             if isinstance(parsed, dict) and "error" in parsed:
                 state["llm_errors"] = state.get("llm_errors", 0) + 1
-                print(f"❌ LLM error count: {state['llm_errors']}")
+                print(f"❌ Error count: {state['llm_errors']}")
             else:
                 state["llm_errors"] = 0
         except:
-            # Not JSON, treat as normal response
             state["llm_errors"] = 0
     else:
-        # Non-HumanMessage response - success
         state["llm_errors"] = 0
 
-    # Stop if too many consecutive errors
-    if state.get("llm_errors", 0) >= 3:
-        print("❌ Too many consecutive LLM errors — aborting solver")
-        return {"messages": [HumanMessage(content="END")]}
+    # Stop if too many errors
+    if state.get("llm_errors", 0) >= 5:
+        print("❌ Too many errors — aborting")
+        return {"messages": [AIMessage(content="END")]}
 
     return {"messages": [resp]}
 
@@ -421,11 +435,10 @@ def agent_node(state: AgentState):
 # Router
 # ------------------------------------------------------------
 def route(state: AgentState):
-    """Route to next node based on last message content."""
     last = state["messages"][-1]
     content = safe_get_content(getattr(last, "content", "")).strip()
 
-    # Fix relative URLs inside JSON outputs
+    # Fix relative URLs
     try:
         if content.startswith("{"):
             data = json.loads(content)
@@ -434,40 +447,38 @@ def route(state: AgentState):
                 if fixed != data["url"]:
                     data["url"] = fixed
                     last.content = json.dumps(data)
-    except Exception:
+    except:
         pass
 
     # Check for tool calls
     if getattr(last, "tool_calls", None):
-        print("→ Routing to tools")
+        print("→ Tools")
         return "tools"
 
-    # Explicit END signal
+    # Check for END
     if content == "END":
-        print("→ Routing to END")
+        print("→ END")
         return "__end__"
 
-    # Validate JSON-like content
+    # Validate JSON
     if content.startswith("{") or content.startswith("["):
         try:
             json.loads(content)
-            print("→ Valid JSON, routing to agent")
+            print("→ Continue")
             return "agent"
         except:
-            print("→ Invalid JSON, routing to json_fix")
+            print("→ Fix JSON")
             return "json_fix"
 
-    # Default to JSON fix for non-JSON content
-    print("→ Non-JSON content, routing to json_fix")
+    print("→ Fix JSON")
     return "json_fix"
 
 # ------------------------------------------------------------
 # Build graph
 # ------------------------------------------------------------
-print("🔧 Building LangGraph workflow...")
+print("🔧 Building workflow...")
 
 graph = StateGraph(AgentState)
-
 graph.add_node("agent", agent_node)
 graph.add_node("json_fix", handle_malformed_node)
 graph.add_node("tools", ToolNode(TOOLS))
@@ -477,47 +488,35 @@ graph.add_edge("json_fix", "agent")
 graph.add_edge("tools", "agent")
 
 graph.add_conditional_edges(
-    "agent",
-    route,
-    {
-        "agent": "agent",
-        "json_fix": "json_fix",
-        "tools": "tools",
-        "__end__": "__end__",
-    },
+    "agent", route,
+    {"agent": "agent", "json_fix": "json_fix", "tools": "tools", "__end__": "__end__"},
 )
 
 app = graph.compile()
-print("✅ LangGraph workflow compiled successfully")
+print("✅ Workflow compiled")
 
 # ------------------------------------------------------------
 # Runner
 # ------------------------------------------------------------
 def run_agent(url: str):
-    """
-    Top-level entry. Called by your FastAPI background task with the quiz URL.
-    """
     print(f"\n{'='*60}")
-    print(f"🚀 Starting solver for: {url}")
+    print(f"🚀 Starting: {url}")
     print(f"{'='*60}\n")
     
     base = extract_base(url)
     initial = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": url},
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=url),
     ]
 
-    # Initial state includes llm_errors counter
     try:
         app.invoke(
             {"messages": initial, "json_fixes": 0, "base_url": base, "llm_errors": 0},
             config={"recursion_limit": RECURSION_LIMIT},
         )
-        print("\n🎉 Solver run completed successfully!")
+        print("\n🎉 Completed!")
     except Exception as e:
-        print(f"\n❌ Exception during graph invoke: {e}")
+        print(f"\n❌ Error: {e}")
         traceback.print_exc()
     
-    print(f"\n{'='*60}")
-    print("Solver finished")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*60}\n")
